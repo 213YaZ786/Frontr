@@ -1,8 +1,10 @@
 package com.frontr.app.data.repository
 
 import com.frontr.app.core.common.Outcome
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.Conversation
 import com.frontr.app.core.model.Feed
+import com.frontr.app.core.model.Post
 import com.frontr.app.data.reddit.RedditApi
 
 /**
@@ -15,4 +17,7 @@ class FeedRepository(private val api: RedditApi) {
 
     /** A post's comments. Never cached: they change all the time. */
     suspend fun loadConversation(id: String): Outcome<Conversation> = api.post(id)
+
+    suspend fun loadMoreComments(more: CommentLine.More, post: Post): Outcome<List<CommentLine>> =
+        api.moreComments(more, post.permalink, post.authorHandle)
 }

@@ -133,13 +133,35 @@ data class ProfileStats(
  * change constantly and are only worth reading fresh.
  *
  * [ancestors] are the posts it answers, oldest first. [continuation] is the
- * author's own thread under it. [replies] are grouped in the small chains the
- * server shows, a reply followed by the answers to it.
+ * author's own thread under it. [comments] is the comment tree in reading
+ * order, each comment with its depth, and where Reddit left comments out of
+ * the page, the line that loads them.
  */
 data class Conversation(
     val ancestors: List<Post>,
     val main: Post?,
     val continuation: List<Post>,
-    val replies: List<List<Post>>,
+    val comments: List<CommentLine>,
     val host: String
 )
+
+/** One line of a post's comment tree. */
+sealed interface CommentLine {
+    val depth: Int
+
+    data class Reply(val post: Post, override val depth: Int) : CommentLine
+
+    /**
+     * Comments Reddit leaves out of the page until the reader asks: the rest
+     * of the comments at the end ([topLevel]), or the rest of a thread.
+     * [path] and [cursor] are what Reddit's own page sends to get them.
+     * [remaining] is how many are left, when Reddit says.
+     */
+    data class More(
+        val path: String,
+        val cursor: String,
+        override val depth: Int,
+        val topLevel: Boolean,
+        val remaining: Int? = null
+    ) : CommentLine
+}

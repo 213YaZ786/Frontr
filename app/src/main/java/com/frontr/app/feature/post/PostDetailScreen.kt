@@ -6,6 +6,7 @@ import com.frontr.app.ui.component.RejectOnFailure
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
+import com.frontr.app.ui.component.QuietButton
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.FloatingTopBar
 import com.frontr.app.ui.component.PostCard
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.frontr.app.core.media.MediaDownloader
 import com.frontr.app.data.settings.SettingsStore
 import com.frontr.app.core.link.LinkRouter
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.Post
 import com.frontr.app.core.model.PostStats
 import com.frontr.app.feature.media.MediaViewer
@@ -130,6 +132,9 @@ fun PostDetailScreen(
                     contentPadding = padding,
                     post = post,
                     thread = state.thread,
+                    loadingMore = state.loadingMore,
+                    failedMore = state.failedMore,
+                    onLoadMore = viewModel::loadMore,
                     onOpenProfile = onOpenProfile,
                     onOpenPost = onOpenPost,
                     onRetry = viewModel::retryThread,
@@ -157,13 +162,17 @@ fun PostDetailScreen(
 
 /**
  * The post in the middle of its conversation: what it answers above, then
- * the post itself in full, the author's own thread, and the replies.
+ * the post itself in full, the author's own thread, and the comments as a
+ * tree, each answer set in under the comment it answers.
  */
 @Composable
 private fun ConversationView(
     contentPadding: PaddingValues,
     post: Post,
     thread: ThreadState,
+    loadingMore: Set<String>,
+    failedMore: Set<String>,
+    onLoadMore: (CommentLine.More) -> Unit,
     onOpenProfile: (String) -> Unit,
     onOpenPost: (Post) -> Unit,
     onRetry: () -> Unit,
@@ -188,10 +197,10 @@ private fun ConversationView(
     }
 
     @Composable
-    fun ReplyCard(item: Post, modifier: Modifier = Modifier) {
+    fun ReplyCard(item: Post, onClick: () -> Unit = { onOpenPost(item) }, modifier: Modifier = Modifier) {
         PostCard(
             post = item,
-            onClick = { onOpenPost(item) },
+            onClick = onClick,
             onOpenLink = { uriHandler.openUri(it) },
             onDownload = { downloader.download(it, item.authorHandle) },
             showStats = settings.showCounts,
@@ -272,8 +281,8 @@ private fun ConversationView(
             }
 
             is ThreadState.Ready -> {
-                val chains = thread.conversation.replies
-                if (chains.isEmpty()) {
+                val lines = thread.conversation.comments
+                if (lines.isEmpty()) {
                     item(key = "noreplies") {
                         Text(
                             "No replies yet.",
@@ -283,21 +292,26 @@ private fun ConversationView(
                             modifier = Modifier.fillMaxWidth().padding(24.dp)
                         )
                     }
-                } else {
-                    chains.forEachIndexed { chainIndex, chain ->
-                        chain.forEachIndexed { index, reply ->
-                            item(key = "r$chainIndex-${reply.id}") {
-                                // Answers inside a chain sit slightly in, so the
-                                // exchange reads as one conversation.
-                                ReplyCard(reply, if (index > 0) Modifier.padding(start = 24.dp) else Modifier)
-                            }
+                }
+                lines.forEach { line ->
+                    // Answers sit in under what they answer, a few levels deep
+                    // at most, so a long exchange still has room to read.
+                    val indent = Modifier.padding(start = (INDENT_STEP * line.depth.coerceAtMost(MAX_INDENT)).dp)
+                    when (line) {
+                        is CommentLine.Reply -> item(key = "c" + line.post.id) {
+                            // A comment has no page of its own in Frontr: a tap
+                            // opens nothing, its links and pictures still do.
+                            ReplyCard(line.post, onClick = {}, modifier = indent)
                         }
-                    }
-                    item(key = "more") {
-                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            BoldButton(onClick = { LinkRouter.openOutside(context, post.permalink) }) {
-                                Text("See all comments on Reddit")
-                            }
+                        is CommentLine.More -> item(key = "m" + line.cursor) {
+                            MoreComments(
+                                more = line,
+                                loading = line.cursor in loadingMore,
+                                failed = line.cursor in failedMore,
+                                onLoad = { onLoadMore(line) },
+                                onOpenOnReddit = { LinkRouter.openOutside(context, post.permalink) },
+                                modifier = indent
+                            )
                         }
                     }
                 }
@@ -305,6 +319,46 @@ private fun ConversationView(
         }
     }
 }
+
+/**
+ * Where Reddit left comments out of the page. The rest of the comments load
+ * by themselves as the reader reaches the end, the rest of a thread when
+ * the reader asks for it.
+ */
+@Composable
+private fun MoreComments(
+    more: CommentLine.More,
+    loading: Boolean,
+    failed: Boolean,
+    onLoad: () -> Unit,
+    onOpenOnReddit: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (more.topLevel && !failed) LaunchedEffect(more.cursor) { onLoad() }
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, if (more.topLevel) Alignment.CenterHorizontally else Alignment.Start),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        when {
+            failed -> {
+                QuietButton(onClick = onLoad) { Text("Try again") }
+                if (more.topLevel) BoldButton(onClick = onOpenOnReddit) { Text("See the rest on Reddit") }
+            }
+            loading || more.topLevel -> {
+                LoadingMark(size = 22.dp)
+                Text(
+                    if (more.topLevel) "Loading more comments" else "Loading replies",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> QuietButton(onClick = onLoad) { Text("More replies") }
+        }
+    }
+}
+
+private const val INDENT_STEP = 14
+private const val MAX_INDENT = 5
 
 @Composable
 private fun SectionLabel(text: String) {

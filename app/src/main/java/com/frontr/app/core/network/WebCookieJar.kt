@@ -28,5 +28,13 @@ class WebCookieJar : CookieJar {
         return raw.split(';').mapNotNull { Cookie.parse(url, it.trim()) }
     }
 
+    /**
+     * One cookie's value, as the web engine holds it for this address: Reddit's
+     * own page sends its csrf_token back with the calls it makes.
+     */
+    fun value(url: String, name: String): String? =
+        cookies.getCookie(url)?.split(';')?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("$name=") }?.substringAfter('=')?.takeIf { it.isNotEmpty() }
+
     private fun isReddit(url: HttpUrl) = url.host == "reddit.com" || url.host.endsWith(".reddit.com")
 }

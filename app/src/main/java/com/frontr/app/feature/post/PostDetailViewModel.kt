@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.frontr.app.core.common.AppError
 import com.frontr.app.core.common.Outcome
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.Conversation
 import com.frontr.app.core.model.Post
 import com.frontr.app.data.cache.FeedCache
@@ -22,7 +23,10 @@ sealed interface ThreadState {
 data class PostDetailUiState(
     val post: Post? = null,
     val lookingUp: Boolean = true,
-    val thread: ThreadState = ThreadState.Loading
+    val thread: ThreadState = ThreadState.Loading,
+    /** Cursors of the "more comments" lines being loaded, and of those that failed. */
+    val loadingMore: Set<String> = emptySet(),
+    val failedMore: Set<String> = emptySet()
 ) {
     /** Neither the phone nor the server could produce the post. */
     val missing: Boolean get() = post == null && !lookingUp && thread !is ThreadState.Loading
@@ -30,7 +34,8 @@ data class PostDetailUiState(
 
 /**
  * Shows the post at once from what the phone already has, then fetches its
- * conversation: what it answers, the author's thread, and the replies.
+ * conversation: what it answers, the author's thread, and the comments,
+ * then the comments Reddit leaves out of the page, as the reader gets to them.
  * Replies are never saved, they are only worth reading fresh.
  */
 class PostDetailViewModel(
@@ -77,6 +82,38 @@ class PostDetailViewModel(
         viewModelScope.launch { fetchThread() }
     }
 
+    /**
+     * Loads the comments a "more" line stands for and puts them in its place.
+     * The answer may end with a further "more" line, which then takes over.
+     */
+    fun loadMore(more: CommentLine.More) {
+        val now = _state.value
+        val post = now.post ?: return
+        if (more.cursor in now.loadingMore) return
+        _state.value = now.copy(loadingMore = now.loadingMore + more.cursor, failedMore = now.failedMore - more.cursor)
+        viewModelScope.launch {
+            val outcome = repository.loadMoreComments(more, post)
+            val current = _state.value
+            val ready = current.thread as? ThreadState.Ready
+            _state.value = when {
+                outcome is Outcome.Success && ready != null -> {
+                    val lines = ready.conversation.comments
+                    val at = lines.indexOf(more)
+                    // Comments already shown are not shown twice.
+                    val shown = lines.mapNotNull { (it as? CommentLine.Reply)?.post?.id }.toSet()
+                    val fresh = outcome.value.filter { it !is CommentLine.Reply || it.post.id !in shown }
+                    val merged = if (at < 0) lines else lines.subList(0, at) + fresh + lines.subList(at + 1, lines.size)
+                    RecentPosts.remember(fresh.mapNotNull { (it as? CommentLine.Reply)?.post })
+                    current.copy(
+                        thread = ThreadState.Ready(ready.conversation.copy(comments = merged)),
+                        loadingMore = current.loadingMore - more.cursor
+                    )
+                }
+                else -> current.copy(loadingMore = current.loadingMore - more.cursor, failedMore = current.failedMore + more.cursor)
+            }
+        }
+    }
+
     private suspend fun fetchThread() {
         val id = loadedId ?: return
         when (val outcome = repository.loadConversation(id)) {
@@ -109,7 +146,14 @@ internal object RecentPosts {
 
     @Synchronized
     fun remember(conversation: Conversation) {
-        (conversation.ancestors + listOfNotNull(conversation.main) + conversation.continuation +
-            conversation.replies.flatten()).forEach { posts[it.id] = it }
+        remember(
+            conversation.ancestors + listOfNotNull(conversation.main) + conversation.continuation +
+                conversation.comments.mapNotNull { (it as? CommentLine.Reply)?.post }
+        )
+    }
+
+    @Synchronized
+    fun remember(list: List<Post>) {
+        list.forEach { posts[it.id] = it }
     }
 }

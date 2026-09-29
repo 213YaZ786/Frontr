@@ -4,13 +4,18 @@ import com.frontr.app.core.common.AppError
 import com.frontr.app.core.common.Outcome
 import com.frontr.app.core.debug.RequestLog
 import com.frontr.app.core.link.RedditLink
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.Conversation
 import com.frontr.app.core.model.Feed
 import com.frontr.app.core.network.ErrorMapper
 import com.frontr.app.core.network.HostThrottle
 import com.frontr.app.core.network.PageBrowser
+import com.frontr.app.core.network.WebCookieJar
 import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.parameters
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +42,8 @@ class RedditApi(
     private val client: HttpClient,
     private val throttle: HostThrottle,
     private val log: RequestLog,
-    private val browser: PageBrowser
+    private val browser: PageBrowser,
+    private val cookies: WebCookieJar
 ) {
 
     private val checks = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -134,12 +140,65 @@ class RedditApi(
         }
     }
 
-    /** A post and its first comments. [thingId] is t3_ and the post id. */
+    /** A post and its comments. [thingId] is t3_ and the post id. */
     suspend fun post(thingId: String): Outcome<Conversation> =
         when (val read = get(RedditLink.postUrl(thingId), RequestLog.Kind.THREAD)) {
             is Outcome.Success -> RedditParser.conversation(read.value)?.let { Outcome.Success(it) }
                 ?: Outcome.Failure(AppError.PostUnavailable(RedditParser.HOST, "This post is gone or not shown to logged out readers"))
             is Outcome.Failure -> read
+        }
+
+    /**
+     * Comments Reddit left out of a post's page, the way its own page gets
+     * them: a form sent back to the address the page names, with the
+     * cursor it gave and the csrf_token cookie the site set. [post] is the
+     * post's address, the page the call is made from.
+     */
+    suspend fun moreComments(more: CommentLine.More, post: String, sub: String): Outcome<List<CommentLine>> =
+        withContext(Dispatchers.IO) {
+            val host = RedditParser.HOST
+            val url = "https://$host${more.path}"
+            if (!throttle.acquire(host)) {
+                return@withContext Outcome.Failure(AppError.RateLimited(host, throttle.cooldownRemainingMs(host) / 1000))
+            }
+            val csrf = cookies.value("https://$host/", "csrf_token")
+            val started = System.currentTimeMillis()
+            try {
+                val response = client.submitForm(
+                    url = url,
+                    formParameters = parameters {
+                        append("cursor", more.cursor)
+                        csrf?.let { append("csrf_token", it) }
+                    }
+                ) {
+                    header("Origin", "https://$host")
+                    header("Referer", post)
+                }
+                val body = response.bodyAsText()
+                val status = response.status.value
+                val lines = if (status == 200) RedditParser.comments(body, sub, at = more) else emptyList()
+                val replies = lines.count { it is CommentLine.Reply }
+                log.record(
+                    kind = RequestLog.Kind.THREAD,
+                    url = url,
+                    outcome = if (status == 200) "more comments: $replies read, ${lines.size - replies} further blocks" else "more comments: http $status",
+                    httpStatus = status,
+                    bodyBytes = body.length,
+                    durationMillis = System.currentTimeMillis() - started,
+                    // Whether the cookie was there, never its value.
+                    detail = "csrf_token ${if (csrf != null) "sent" else "not set"}" +
+                        if (replies == 0) ", ${RedditParser.describe(body)}" else ""
+                )
+                if (lines.isEmpty()) log.keepPage("more comments that gave none, http $status, $url", body)
+                if (status == 429) throttle.penalise(host, response.headers["Retry-After"]?.toLongOrNull())
+                ErrorMapper.fromStatus(host, status, response.headers["Retry-After"]?.toLongOrNull(), body, null)
+                    ?.let { Outcome.Failure(it) }
+                    ?: if (lines.isEmpty()) Outcome.Failure(AppError.ClientRefused(host, status)) else Outcome.Success(lines)
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                log.record(RequestLog.Kind.THREAD, url, "more comments: transport failure", durationMillis = System.currentTimeMillis() - started, detail = failure.toString())
+                Outcome.Failure(ErrorMapper.fromThrowable(host, failure))
+            }
         }
 
     private suspend fun get(url: String, kind: RequestLog.Kind, handle: String? = null): Outcome<String> =

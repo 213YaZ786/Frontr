@@ -53,10 +53,11 @@ val appModule = module {
     single {
         val agent = runCatching { WebSettings.getDefaultUserAgent(androidContext()) }
             .getOrDefault(HttpClientFactory.FALLBACK_USER_AGENT)
-        HttpClientFactory.create(get(), agent, WebCookieJar())
+        HttpClientFactory.create(get(), agent, get<WebCookieJar>())
     }
+    single { WebCookieJar() }
     single { WebPages(androidContext(), get()) }
-    single { RedditApi(get(), get(), get(), get<WebPages>()) }
+    single { RedditApi(get(), get(), get(), get<WebPages>(), get<WebCookieJar>()) }
     single { ConnectivityMonitor(androidContext()) }
     // Reddit hands out its videos as MP4 files, saved as they are.
     single { MediaDownloader(androidContext(), get(named("appScope"))) { file -> file } }

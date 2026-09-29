@@ -1,5 +1,6 @@
 package com.frontr.app.data.reddit
 
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.MediaType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -93,19 +94,43 @@ class RedditParserTest {
     }
 
     @Test
-    fun `reads a post page with its text and comment chains`() {
+    fun `reads a post page with its text and its whole comment tree`() {
         val conversation = RedditParser.conversation(POST_PAGE)!!
         val main = conversation.main!!
         assertEquals("A question\n\nFirst paragraph with a link.\n\nSecond paragraph.", main.text)
         assertEquals(
-            listOf(listOf("t1_c1", "t1_c2"), listOf("t1_c4")),
-            conversation.replies.map { chain -> chain.map { it.id } }
+            listOf("t1_c1 0", "t1_c2 1", "t1_c3 2", "more 1 Y3Vyc29yMQ==", "t1_c4 0", "more 0 Y3Vyc29yMg== 75"),
+            conversation.comments.map { it.describe() }
         )
-        val first = conversation.replies[0][0]
+        val first = (conversation.comments[0] as CommentLine.Reply).post
         assertEquals("u/alpha", first.authorName)
         assertEquals("A first answer & more", first.text)
         assertEquals(listOf("https://example.org/source"), first.links)
         assertEquals(60, first.stats?.likes)
+        val nested = conversation.comments[3] as CommentLine.More
+        assertEquals("/svc/shreddit/more-comments/Examples/t3_eee555?sort=CONFIDENCE&startingDepth=1&commentParentPositions=0", nested.path)
+        assertTrue((conversation.comments.last() as CommentLine.More).topLevel)
+    }
+
+    @Test
+    fun `more comments go under the thread they belong to, however Reddit counts depth`() {
+        val at = RedditParser.conversation(POST_PAGE)!!.comments[3] as CommentLine.More
+        fun answer(depth: Int) = """
+            <shreddit-comment author="eps" depth="$depth" permalink="/r/Examples/comments/eee555/comment/c5/" score="3">
+              <div id="t1_c5-comment-rtjson-content" slot="comment"><div><p>Loaded later</p></div></div>
+              <shreddit-comment author="zeta" depth="${depth + 1}" permalink="/r/Examples/comments/eee555/comment/c6/" score="1">
+                <div id="t1_c6-comment-rtjson-content" slot="comment"><div><p>And its answer</p></div></div>
+              </shreddit-comment>
+            </shreddit-comment>
+        """
+        assertEquals(listOf("t1_c5 1", "t1_c6 2"), RedditParser.comments(answer(1), "examples", at).map { it.describe() })
+        assertEquals(listOf("t1_c5 1", "t1_c6 2"), RedditParser.comments(answer(0), "examples", at).map { it.describe() })
+        assertEquals("Loaded later", (RedditParser.comments(answer(0), "examples", at)[0] as CommentLine.Reply).post.text)
+    }
+
+    private fun CommentLine.describe() = when (this) {
+        is CommentLine.Reply -> "${post.id} $depth"
+        is CommentLine.More -> listOfNotNull("more", depth, cursor, remaining).joinToString(" ")
     }
 
     @Test
@@ -194,11 +219,22 @@ class RedditParserTest {
                   <div id="t1_c3-comment-rtjson-content" slot="comment"><div><p>Deeper</p></div></div>
                 </shreddit-comment>
               </shreddit-comment>
+              <div id="comment-children">
+                <faceplate-partial class="more-comments-partial" loading="action" src="/svc/shreddit/more-comments/Examples/t3_eee555?sort=CONFIDENCE&amp;startingDepth=1&amp;commentParentPositions=0" method="post" slot="children">
+                  <input type="hidden" name="cursor" value="Y3Vyc29yMQ==">
+                  <button type="button">1 more reply</button>
+                </faceplate-partial>
+              </div>
             </shreddit-comment>
             <shreddit-comment created="2026-09-28T10:00:00.000000+0000" author="delta" depth="0"
               permalink="/r/Examples/comments/eee555/comment/c4/" score="2">
               <div id="t1_c4-comment-rtjson-content" slot="comment"><div><p>Another answer</p></div></div>
             </shreddit-comment>
+            <faceplate-partial name="CommentShareMenu" src="/svc/shreddit/comment-share-menu" loading="programmatic"></faceplate-partial>
+            <faceplate-partial class="top-level" id="top-level-more-comments-partial" loading="lazy" src="/svc/shreddit/more-comments/Examples/t3_eee555?top-level=1&amp;comments-remaining=75&amp;commentPositionOffset=2" method="post">
+              <input type="hidden" name="cursor" value="Y3Vyc29yMg==">
+              <shreddit-loading></shreddit-loading>
+            </faceplate-partial>
         """.trimIndent()
     }
 }

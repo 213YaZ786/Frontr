@@ -1,6 +1,7 @@
 package com.frontr.app.data.reddit
 
 import com.frontr.app.core.link.RedditLink
+import com.frontr.app.core.model.CommentLine
 import com.frontr.app.core.model.Conversation
 import com.frontr.app.core.model.Feed
 import com.frontr.app.core.model.LinkCard
@@ -149,24 +150,66 @@ internal object RedditParser {
      */
     fun postIds(body: String): Int = Regex("t3_[a-z0-9]{4,12}\\b").findAll(body).map { it.value }.distinct().count()
 
-    /** A post and its first comments, from the post's own page. */
+    /** A post and its comments, from the post's own page. */
     fun conversation(html: String): Conversation? {
         val tag = tags(html, "shreddit-post").firstOrNull() ?: return null
         val id = tag["id"] ?: return null
         val main = post(tag, html, body = richText(html, "$id-post-rtjson-content"))?.let { it.copy(avatarUrl = it.avatarUrl ?: subIcon(html)) } ?: return null
         val sub = tag["subreddit-name"].orEmpty().lowercase()
-        val chains = mutableListOf<MutableList<Post>>()
-        for (comment in tags(html, "shreddit-comment")) {
-            val depth = comment["depth"]?.toIntOrNull() ?: continue
-            val reply = comment(comment, html, sub) ?: continue
-            // One comment and the first answer to it, the way a thread is
-            // shown in small chains rather than as a full tree.
-            when {
-                depth == 0 -> chains.add(mutableListOf(reply))
-                depth == 1 && chains.lastOrNull()?.size == 1 -> chains.last().add(reply)
+        return Conversation(ancestors = emptyList(), main = main, continuation = emptyList(), comments = comments(html, sub), host = HOST)
+    }
+
+    /**
+     * The comment tree of a post's page, or of what a "more comments" call
+     * answers, in reading order. Reddit nests each comment's answers inside
+     * it, and puts the block that loads a thread's missing answers after the
+     * answers it shows, so the page's own order is the tree's.
+     *
+     * [at] is the line the page answers, when it is one: Reddit may count
+     * depth from that point rather than from the post, which puts the
+     * answers back under the thread they belong to.
+     */
+    fun comments(html: String, sub: String, at: CommentLine.More? = null): List<CommentLine> {
+        val lines = mutableListOf<CommentLine>()
+        // A page read back from the web engine may hold a part twice.
+        val seen = mutableSetOf<String>()
+        for (m in TREE_TAG.findAll(html)) {
+            val a = attributes(m.groupValues[2])
+            if (m.groupValues[1].equals("shreddit-comment", ignoreCase = true)) {
+                val depth = a["depth"]?.toIntOrNull() ?: at?.depth ?: 0
+                comment(a, html, sub)?.takeIf { seen.add(it.id) }?.let { lines.add(CommentLine.Reply(it, depth)) }
+            } else {
+                more(a, html, m.range.last)?.takeIf { seen.add(it.cursor) }?.let(lines::add)
             }
         }
-        return Conversation(ancestors = emptyList(), main = main, continuation = emptyList(), replies = chains, host = HOST)
+        if (at == null) return lines
+        val shallowest = lines.minOfOrNull { it.depth } ?: return lines
+        val shift = (at.depth - shallowest).coerceAtLeast(0)
+        return if (shift == 0) lines else lines.map {
+            when (it) {
+                is CommentLine.Reply -> it.copy(depth = it.depth + shift)
+                is CommentLine.More -> it.copy(depth = it.depth + shift)
+            }
+        }
+    }
+
+    /**
+     * A block that loads comments left out of the page: its address, and the
+     * cursor its hidden field holds, which the browser sends back with it.
+     */
+    private fun more(a: Map<String, String>, html: String, end: Int): CommentLine.More? {
+        val src = a["src"]?.takeIf { it.startsWith("/svc/shreddit/more-comments/") } ?: return null
+        val close = html.indexOf("</faceplate-partial>", end).takeIf { it > 0 } ?: html.length
+        val cursor = tags(html.substring(end + 1, close), "input").firstOrNull { it["name"] == "cursor" }?.get("value") ?: return null
+        val query = src.substringAfter('?', "").split('&').associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        val topLevel = query["top-level"] == "1"
+        return CommentLine.More(
+            path = src,
+            cursor = cursor,
+            depth = if (topLevel) 0 else query["startingDepth"]?.toIntOrNull() ?: 1,
+            topLevel = topLevel,
+            remaining = query["comments-remaining"]?.toIntOrNull()
+        )
     }
 
     private fun post(a: Map<String, String>, html: String, body: String?): Post? {
@@ -320,6 +363,10 @@ internal object RedditParser {
     /** A url(...) in a style, with the property it is set on, if any. */
     private val BANNER_URL = Regex("""(?:(--[a-z-]+)\s*:\s*)?url\(([^)]+)\)""")
     private val BANNER_SIZES = listOf("--large-banner", "--x-large-banner", "--medium-banner", "--small-banner")
+    private val TREE_TAG = Regex(
+        "<(shreddit-comment|faceplate-partial)((?:\\s+[^\\s=>/]+(?:=(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?)*)\\s*/?>",
+        RegexOption.IGNORE_CASE
+    )
     private val ATTRIBUTE = Regex("""([a-zA-Z][a-zA-Z0-9:-]*)="([^"]*)"""")
     private val ENTITY = Regex("&(#?[a-zA-Z0-9]+);")
     private val NAMED = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ")
