@@ -141,12 +141,36 @@ class RedditApi(
     }
 
     /** A post and its comments. [thingId] is t3_ and the post id. */
-    suspend fun post(thingId: String): Outcome<Conversation> =
-        when (val read = get(RedditLink.postUrl(thingId), RequestLog.Kind.THREAD)) {
-            is Outcome.Success -> RedditParser.conversation(read.value)?.let { Outcome.Success(it) }
-                ?: Outcome.Failure(AppError.PostUnavailable(RedditParser.HOST, "This post is gone or not shown to logged out readers"))
+    suspend fun post(thingId: String): Outcome<Conversation> {
+        val url = RedditLink.postUrl(thingId)
+        return when (val read = get(url, RequestLog.Kind.THREAD)) {
+            is Outcome.Success -> {
+                var page = read.value
+                var conversation = RedditParser.conversation(page)
+                // A text post whose page came without its body: the frame of
+                // the page, the body left to the site's script. The web engine
+                // runs it, as for a sub's bare page; the page is kept in the
+                // log either way, so a report shows what Reddit sent.
+                if (conversation != null && RedditParser.bodyMissing(page)) {
+                    log.record(RequestLog.Kind.THREAD, url, "text post without its body, opening it in the web engine", bodyBytes = page.length)
+                    log.keepPage("post page without its body, $url", page)
+                    passing.withLock { browser.open(url) }?.let { settled ->
+                        RedditParser.conversation(settled)?.let {
+                            page = settled
+                            conversation = it
+                        }
+                    }
+                    log.record(
+                        RequestLog.Kind.THREAD, url,
+                        if (RedditParser.bodyMissing(page)) "body still missing after the web engine" else "body read through the web engine"
+                    )
+                }
+                conversation?.let { Outcome.Success(it) }
+                    ?: Outcome.Failure(AppError.PostUnavailable(RedditParser.HOST, "This post is gone or not shown to logged out readers"))
+            }
             is Outcome.Failure -> read
         }
+    }
 
     /**
      * Comments Reddit left out of a post's page, the way its own page gets

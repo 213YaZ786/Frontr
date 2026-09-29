@@ -212,6 +212,18 @@ internal object RedditParser {
         )
     }
 
+    /**
+     * Whether the page's post is a text post whose body is not in the page:
+     * its text block is absent or empty. A text post with nothing but a title
+     * has no block either, and the web engine then finds none as well.
+     */
+    fun bodyMissing(html: String): Boolean {
+        val tag = tags(html, "shreddit-post").firstOrNull() ?: return false
+        if (tag["post-type"] != "text") return false
+        val id = tag["id"] ?: return false
+        return richText(html, "$id-post-rtjson-content").isNullOrBlank()
+    }
+
     private fun post(a: Map<String, String>, html: String, body: String?): Post? {
         val id = a["id"]?.takeIf { it.startsWith("t3_") } ?: return null
         val sub = a["subreddit-name"] ?: return null

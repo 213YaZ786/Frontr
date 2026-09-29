@@ -134,6 +134,13 @@ class RedditParserTest {
     }
 
     @Test
+    fun `a text post page without its body is told apart`() {
+        assertTrue(!RedditParser.bodyMissing(POST_PAGE))
+        val bare = POST_PAGE.replace(Regex("(?s)<div slot=\"text-body\">.*?</div></div>"), "")
+        assertTrue(RedditParser.bodyMissing(bare))
+    }
+
+    @Test
     fun `a page without a post is no conversation`() {
         assertNull(RedditParser.conversation("<html><body>blocked</body></html>"))
         assertNotNull(RedditParser.conversation(POST_PAGE))
