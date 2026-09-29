@@ -1,5 +1,6 @@
 package com.frontr.app.data.settings
 
+import com.frontr.app.core.update.UpdateMode
 import android.content.Context
 import com.frontr.app.core.common.writeTextAtomically
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,8 @@ enum class AutoDownload { OFF, UNMETERED, ANY }
 
 @Serializable
 data class Settings(
+    /** What happens when a newer version is out, checked once when the app opens. */
+    val updates: UpdateMode = UpdateMode.NOTIFY,
     /** Poll followed accounts in the background so history accumulates. */
     val backgroundSync: Boolean = false,
     val syncIntervalMinutes: Int = 60,

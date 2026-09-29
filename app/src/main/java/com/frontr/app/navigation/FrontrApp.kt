@@ -1,5 +1,7 @@
 package com.frontr.app.navigation
 
+import com.frontr.app.BuildConfig
+import com.frontr.app.ui.component.UpdatePrompt
 import com.frontr.app.ui.glass.rememberGlassBackdrop
 import com.frontr.app.ui.glass.glassSource
 import com.frontr.app.ui.glass.LocalGlassBackdrop
@@ -315,6 +317,11 @@ private fun MainTabs(
     var showWelcome by rememberSaveable {
         mutableStateOf(!store.current.welcomeSeen && accounts.accounts.value.isEmpty())
     }
+
+    // Once when the app opens, never over the guide; debug builds are a
+    // different app and skip it.
+    val updates by store.settings.collectAsState()
+    if (!showWelcome && !BuildConfig.DEBUG) UpdatePrompt(updates.updates, BuildConfig.VERSION_NAME)
 
     // Remembered on every settled switch, so choosing "Last tab" later in
     // Settings already knows where the reader was.
