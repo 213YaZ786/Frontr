@@ -1,6 +1,6 @@
 package com.frontr.app.feature.feed
 
-import com.frontr.app.ui.component.MeltingDots
+import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
 import androidx.compose.foundation.clickable
@@ -156,7 +156,7 @@ fun FeedScreen(
                 actions = {
                     IconButton(onClick = viewModel::refresh, enabled = !state.loading) {
                         if (state.loading) {
-                            MeltingDots(size = 22.dp)
+                            LoadingMark(size = 22.dp)
                         } else {
                             Icon(FrontrIcons.Refresh, contentDescription = "Refresh")
                         }
@@ -222,7 +222,7 @@ fun FeedScreen(
                 if (feed == null && state.loading) {
                     item(key = "loading") {
                         Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                            MeltingDots(size = 40.dp)
+                            LoadingMark(size = 40.dp)
                         }
                     }
                 }
@@ -247,7 +247,7 @@ fun FeedScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        loadingMore -> MeltingDots(size = 28.dp)
+                        loadingMore -> LoadingMark(size = 28.dp)
                         canMore -> BoldButton(onClick = { viewModel.loadMore(manual = true) }) {
                             Text(if (pagingFailed) "Try again" else "Load older posts")
                         }

@@ -10,17 +10,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -35,7 +28,7 @@ import kotlin.math.cos
  * Frontr's loading mark, the launcher icon in motion: its three dots, far,
  * mid and near, drift together until they melt into one, then part again.
  *
- * [gather] from 0 to 1 draws the dots from their places in the icon towards
+ * [progress] from 0 to 1 draws the dots from their places in the icon towards
  * the centre, for a gesture that is still being made. While [running] they
  * loop on their own and the whole mark turns slowly.
  *
@@ -46,11 +39,11 @@ import kotlin.math.cos
  * towards the surface.
  */
 @Composable
-fun MeltingDots(
+fun LoadingMark(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     running: Boolean = true,
-    gather: Float = 0f
+    progress: Float = 0f
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
@@ -72,7 +65,7 @@ fun MeltingDots(
         label = "turn"
     )
     // Together halfway through the loop, apart at both ends.
-    val pull = if (running) (1f - cos(2f * PI.toFloat() * phase)) / 2f else gather.coerceIn(0f, 1f)
+    val pull = if (running) (1f - cos(2f * PI.toFloat() * phase)) / 2f else progress.coerceIn(0f, 1f)
 
     Canvas(
         modifier
@@ -91,35 +84,6 @@ fun MeltingDots(
         )) {
             val at = home * (1f - pull * GATHER)
             drawCircle(colour, radius = radius * half, center = centre + at * half)
-        }
-    }
-}
-
-/**
- * The pull to refresh indicator with the melting dots: they gather as the
- * list is pulled and loop while the refresh runs. Placed like the standard
- * indicator, sliding down from the top edge of its box.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MeltingPullIndicator(state: PullToRefreshState, isRefreshing: Boolean, modifier: Modifier = Modifier) {
-    val threshold = PullToRefreshDefaults.PositionalThreshold
-    val fraction = state.distanceFraction
-    Box(
-        modifier.graphicsLayer {
-            translationY = fraction * threshold.toPx() - this.size.height
-            alpha = if (isRefreshing) 1f else (fraction * 2f).coerceIn(0f, 1f)
-        }
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shadowElevation = 3.dp,
-            modifier = Modifier.size(44.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                MeltingDots(size = 28.dp, running = isRefreshing, gather = fraction)
-            }
         }
     }
 }

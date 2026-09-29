@@ -1,6 +1,6 @@
 package com.frontr.app.feature.post
 
-import com.frontr.app.ui.component.MeltingDots
+import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.ui.theme.zone
@@ -143,7 +143,7 @@ fun PostDetailScreen(
                             modifier = Modifier.align(Alignment.Center).padding(32.dp)
                         )
                 }
-                else -> MeltingDots(Modifier.align(Alignment.Center), size = 40.dp)
+                else -> LoadingMark(Modifier.align(Alignment.Center), size = 40.dp)
             }
         }
     }
@@ -234,7 +234,7 @@ private fun ConversationView(
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MeltingDots(size = 22.dp)
+                    LoadingMark(size = 22.dp)
                     Text("Loading replies", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

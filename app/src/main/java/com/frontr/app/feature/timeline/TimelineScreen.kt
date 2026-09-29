@@ -1,8 +1,8 @@
 package com.frontr.app.feature.timeline
 
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import com.frontr.app.ui.component.MeltingDots
-import com.frontr.app.ui.component.MeltingPullIndicator
+import com.frontr.app.ui.component.LoadingMark
+import com.frontr.app.ui.component.PullIndicator
 import com.frontr.app.ui.component.FloatingRoundButton
 import com.frontr.app.ui.component.ScrollUpButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -181,7 +181,7 @@ fun TimelineScreen(
                 state = pull,
                 // Under the status bar, where the list starts, not behind it.
                 indicator = {
-                    MeltingPullIndicator(
+                    PullIndicator(
                         state = pull,
                         isRefreshing = state.loading,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
@@ -228,7 +228,7 @@ fun TimelineScreen(
                 state = pull,
                 // Under the status bar, where the list starts, not behind it.
                 indicator = {
-                    MeltingPullIndicator(
+                    PullIndicator(
                         state = pull,
                         isRefreshing = state.loading,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
@@ -487,7 +487,7 @@ private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         when {
-            state.loadingMore -> MeltingDots(size = 28.dp)
+            state.loadingMore -> LoadingMark(size = 28.dp)
             state.pagingFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     "Couldn't load older posts. Reddit is busy, " +
