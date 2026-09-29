@@ -1,0 +1,9 @@
+<resources>
+    <!-- One step darker under the same near white glyph, so the icon does not
+         glare on a dark launcher. Same palette, same contrast. -->
+    <color name="ic_launcher_background">@android:color/system_accent1_700</color>
+    <color name="ic_launcher_glyph">@android:color/system_accent1_0</color>
+    <!-- The farther dots sink towards the background, which reads as depth. -->
+    <color name="ic_launcher_mid">@android:color/system_accent1_200</color>
+    <color name="ic_launcher_far">@android:color/system_accent1_400</color>
+</resources>

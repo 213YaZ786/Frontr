@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Frontr</string>
+    <string name="nav_timeline">Timeline</string>
+    <string name="nav_accounts">Accounts</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_settings">Settings</string>
+</resources>

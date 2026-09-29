@@ -1,0 +1,544 @@
+package com.frontr.app.feature.timeline
+
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import com.frontr.app.ui.component.FloatingRoundButton
+import com.frontr.app.ui.component.ScrollUpButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.foundation.border
+import com.frontr.app.ui.component.EmptyZone
+import com.frontr.app.ui.component.boldBorder
+import com.frontr.app.ui.component.BoldIconButton
+import com.frontr.app.ui.component.BoldButton
+import com.frontr.app.ui.theme.zone
+import com.frontr.app.ui.component.LocalDockPadding
+import com.frontr.app.ui.component.LocalInlinePlaying
+import com.frontr.app.ui.component.rememberInlineTarget
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.frontr.app.data.read.ReadMarks
+import com.frontr.app.navigation.LocalReadableInset
+import com.frontr.app.core.media.MediaDownloader
+import com.frontr.app.data.settings.SettingsStore
+import com.frontr.app.core.model.Post
+import com.frontr.app.feature.media.MediaViewer
+import com.frontr.app.ui.component.FolderDialog
+import com.frontr.app.ui.component.PostCard
+import com.frontr.app.ui.component.relativeTime
+import com.frontr.app.ui.icon.FrontrIcons
+import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
+
+/**
+ * Home: everything you follow in one stream, newest first.
+ *
+ * Pull down to refresh. A post that arrived since the last visit wears an
+ * outline until you have scrolled past it. The status icon turns red when an
+ * account fails to load and opens the activity log.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimelineScreen(
+    onOpenLog: () -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenPost: (Post) -> Unit,
+    onOpenSearch: () -> Unit,
+    viewModel: TimelineViewModel = koinViewModel()
+) {
+    val state by viewModel.state.collectAsState()
+    val uriHandler = LocalUriHandler.current
+    val downloader: MediaDownloader = koinInject()
+    val settingsStore: SettingsStore = koinInject()
+    val settings by settingsStore.settings.collectAsState()
+    val listState = rememberLazyListState()
+
+    val scope = rememberCoroutineScope()
+    var viewing by remember { mutableStateOf<Pair<Post, Int>?>(null) }
+
+    viewing?.let { (post, index) ->
+        MediaViewer(
+            postId = post.id,
+            media = post.media,
+            startIndex = index,
+            onDownload = { downloader.download(it, post.authorHandle) },
+            onDismiss = { viewing = null }
+        )
+    }
+
+    val haptics = LocalHapticFeedback.current
+
+    var choosingFolder by remember { mutableStateOf(false) }
+    if (choosingFolder) {
+        FolderDialog(
+            title = "Show on Home",
+            folders = state.folders,
+            selected = state.folder,
+            everything = "Every subreddit",
+            onSelect = { name ->
+                choosingFolder = false
+                // A name typed under New folder creates it, empty, and Home
+                // shows it so the reader sees where the next filing lands.
+                viewModel.showFolder(name?.let(viewModel::createFolder))
+            },
+            onDismiss = { choosingFolder = false }
+        )
+    }
+    // Offered once the reader has made a folder. With Main alone there is
+    // nothing to choose, and the title stays a title.
+    val chooseFolder: (() -> Unit)? = if (state.folders.size > 1) {
+        { choosingFolder = true }
+    } else {
+        null
+    }
+
+    // A post is read once it has gone past the top of the screen. Everything
+    // before the first visible row has, by definition, and one pass of the
+    // list costs one write rather than one per card.
+    val marks: ReadMarks = koinInject()
+    val readIds by marks.read.collectAsState()
+
+    // No top bar at all. A bar that folds away and comes back still owns a
+    // band of the screen the whole time it is on it, which on a phone is
+    // several lines of a post. The title and its two actions are the first
+    // zone of the list instead: they scroll away with everything else, one
+    // flick or the back to top button brings them back, and the reading area
+    // is the whole window.
+    val pull = rememberPullToRefreshState()
+    Scaffold { padding ->
+        // The check pill lives outside the when, so it is on screen whether
+        // Home is empty, failed or full, and whatever the scroll position.
+        Box(Modifier.fillMaxSize()) {
+        when {
+            state.followedCount == 0 -> EmptyState(
+                title = "Nothing followed yet",
+                message = "Follow a few subreddits and they will all appear here, on one front page.",
+                actionLabel = "Open Subreddits",
+                onAction = onOpenAccounts,
+                modifier = Modifier.padding(padding)
+            )
+
+            // Pull works here too, so a failed refresh at launch does not
+            // leave Home stuck until a restart.
+            state.isEmpty && state.errors.isNotEmpty() -> PullToRefreshBox(
+                isRefreshing = state.loading,
+                onRefresh = {
+                    // Confirms the gesture crossed the threshold, so the
+                    // reader can let go without watching for the spinner.
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.refresh()
+                },
+                modifier = Modifier.fillMaxSize(),
+                state = pull,
+                // Under the status bar, where the list starts, not behind it.
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = pull,
+                        isRefreshing = state.loading,
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
+                    )
+                }
+            ) {
+                // A list, because the pull gesture needs something scrollable.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = LocalDockPadding.current)
+                ) {
+                    // The header stays, so a folder whose accounts all failed
+                    // is not a dead end: the reader can still switch away.
+                    item(key = "home-header") {
+                        HomeHeader(
+                            state = state,
+                            onOpenSearch = onOpenSearch,
+                            onOpenLog = onOpenLog,
+                            onChooseFolder = chooseFolder
+                        )
+                    }
+                    item(key = "nothing") {
+                        EmptyState(
+                            title = "Nothing could be loaded",
+                            message = "None of your subreddits could be loaded. Pull down to try " +
+                                "again. The activity log shows what Reddit answered.",
+                            actionLabel = "Activity log",
+                            onAction = onOpenLog,
+                            modifier = Modifier.fillParentMaxHeight(0.8f)
+                        )
+                    }
+                }
+            }
+
+            else -> PullToRefreshBox(
+                isRefreshing = state.loading,
+                onRefresh = {
+                    // Confirms the gesture crossed the threshold, so the
+                    // reader can let go without watching for the spinner.
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.refresh()
+                },
+                modifier = Modifier.fillMaxSize(),
+                state = pull,
+                // Under the status bar, where the list starts, not behind it.
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = pull,
+                        isRefreshing = state.loading,
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
+                    )
+                }
+            ) {
+                // Prefetch a page before the reader actually hits the bottom,
+                // so scrolling stays continuous instead of stalling.
+                val shouldLoadMore by remember {
+                    derivedStateOf {
+                        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        last >= listState.layoutInfo.totalItemsCount - LOAD_MORE_THRESHOLD
+                    }
+                }
+                LaunchedEffect(shouldLoadMore, state.canLoadMore, state.pagingFailed) {
+                    if (shouldLoadMore) viewModel.loadMore()
+                }
+
+                val inline = rememberInlineTarget(
+                    listState = listState,
+                    posts = state.posts,
+                    keyOf = { it.id },
+                    paused = viewing != null
+                )
+                CompositionLocalProvider(LocalInlinePlaying provides inline) {
+                // The Home zone is the one row drawn above the posts, so an
+                // index in the list turns back into an index in the posts by
+                // subtracting it.
+                val headerCount = 1
+
+                LaunchedEffect(listState, state.posts, headerCount) {
+                    snapshotFlow { listState.firstVisibleItemIndex }
+                        .collect { first ->
+                            val past = first - headerCount
+                            if (past > 0) {
+                                marks.markRead(state.posts.take(past).map { it.id })
+                            }
+                        }
+                }
+                LazyColumn(
+                    state = listState,
+                    // Horizontal padding rather than a narrower list, so a
+                    // drag in the margins of a wide window scrolls too.
+                    // The list starts under the status bar and scrolls beneath it.
+                    contentPadding = PaddingValues(
+                        start = LocalReadableInset.current,
+                        end = LocalReadableInset.current,
+                        top = padding.calculateTopPadding(),
+                        bottom = LocalDockPadding.current
+                    ),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item(key = "home-header") {
+                        HomeHeader(
+                            state = state,
+                            onOpenSearch = onOpenSearch,
+                            onOpenLog = onOpenLog,
+                            onChooseFolder = chooseFolder
+                        )
+                    }
+
+                    if (state.posts.isEmpty() && !state.loading && state.folder != null) {
+                        item(key = "folder-empty") {
+                            EmptyState(
+                                title = "Nothing in ${state.folder} yet",
+                                message = "File subreddits here from Subreddits, or show every subreddit.",
+                                actionLabel = "Show every subreddit",
+                                onAction = { viewModel.showFolder(null) },
+                                modifier = Modifier.fillParentMaxHeight(0.7f)
+                            )
+                        }
+                    }
+
+                    items(state.posts, key = { it.id }) { post ->
+                        PostCard(
+                            post = post,
+                            // Unknown until the file is read, and unknown
+                            // means read: a border flashed on every card for
+                            // one frame at launch would be worse than none.
+                            unread = marks.ready && post.id !in readIds,
+                            onClick = { onOpenPost(post) },
+                            onOpenLink = { uriHandler.openUri(it) },
+                            onDownload = { downloader.download(it, post.authorHandle) },
+                            showStats = settings.showCounts,
+                            onOpenMedia = { index -> viewing = post to index },
+                            // Posts arrive and merge while the list is on
+                            // screen. Animating placement means a card slides
+                            // into its row instead of teleporting.
+                            modifier = Modifier.animateItem()
+                        )
+                    }
+
+                    item(key = "footer") {
+                        TimelineFooter(state = state, onLoadMore = { viewModel.loadMore(manual = true) })
+                    }
+                }
+                }
+
+                // Both at the bottom right, in one column, above the dock. The
+                // folder switch never leaves: it is how the reader moves from
+                // one stream to another, and a control that only appears once
+                // you have scrolled is a control nobody finds. The way back to
+                // the top stacks above it, and only once the way back is a
+                // real chore.
+                val showBackToTop by remember {
+                    derivedStateOf { listState.firstVisibleItemIndex >= BACK_TO_TOP_AFTER }
+                }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(
+                            end = 16.dp + LocalReadableInset.current,
+                            bottom = LocalDockPadding.current + 16.dp
+                        )
+                ) {
+                    ScrollUpButton(
+                        visible = showBackToTop,
+                        icon = FrontrIcons.ArrowUp,
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } }
+                    )
+                    FloatingRoundButton(
+                        icon = FrontrIcons.Folder,
+                        label = "Choose which folder to read",
+                        onClick = { choosingFolder = true }
+                    )
+                }
+            }
+        }
+        }
+    }
+}
+
+/**
+ * Home's title, its freshness line and its two actions, as the first zone of
+ * the list. Centred, because a title is data and not a row of a list.
+ *
+ * The actions sit on the title's own line and the freshness line runs under
+ * them, so a long "Updated an hour ago" never has to fight the icons for room.
+ */
+@Composable
+private fun HomeHeader(
+    state: TimelineUiState,
+    onOpenSearch: () -> Unit,
+    onOpenLog: () -> Unit,
+    /** Null until the reader has made a folder, see TimelineScreen. */
+    onChooseFolder: (() -> Unit)?
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.zone
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val failing = state.errors.isNotEmpty()
+            if (state.followedCount > 0) {
+                BoldIconButton(
+                    onClick = onOpenLog,
+                    modifier = Modifier.size(BUTTON_SIZE),
+                    // A failing source is the one thing here that needs
+                    // noticing, so it fills rather than tints.
+                    colors = if (failing) {
+                        IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    } else {
+                        IconButtonDefaults.filledTonalIconButtonColors()
+                    },
+                    edge = if (failing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(
+                        FrontrIcons.Pulse,
+                        contentDescription = if (failing) "Some subreddits failed to load" else "Everything loaded",
+                        modifier = Modifier.size(ICON_SIZE)
+                    )
+                }
+            }
+
+            // The two buttons are the same width, so the title lands on the
+            // centre of the zone without being measured against them.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .then(
+                        if (onChooseFolder != null) {
+                            Modifier.clickable(onClickLabel = "Choose which folder to show", onClick = onChooseFolder)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (onChooseFolder == null) {
+                    Text("Home", style = MaterialTheme.typography.titleLarge)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            state.folder ?: "Home",
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Icon(
+                            FrontrIcons.ArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.padding(start = 4.dp).size(20.dp)
+                        )
+                    }
+                }
+                subtitle(state)?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (state.followedCount > 0) {
+                BoldIconButton(
+                    onClick = onOpenSearch,
+                    modifier = Modifier.size(BUTTON_SIZE)
+                ) {
+                    Icon(
+                        FrontrIcons.Search,
+                        contentDescription = "Search saved posts",
+                        modifier = Modifier.size(ICON_SIZE)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun subtitle(state: TimelineUiState): String? = when {
+    state.followedCount == 0 -> null
+    state.loading -> "Updating"
+    state.lastUpdatedMillis != null -> relativeTime(state.lastUpdatedMillis).let { age ->
+        if (age.isEmpty() || age == "now") "Updated just now" else "Updated $age ago"
+    }
+    else -> null
+}
+
+@Composable
+private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            state.loadingMore -> CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp
+            )
+            state.pagingFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Couldn't load older posts. Reddit is busy, " +
+                        "which usually clears in a minute.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                BoldButton(onClick = onLoadMore) { Text("Try again") }
+            }
+            state.canLoadMore -> BoldButton(onClick = onLoadMore) { Text("Load older posts") }
+            else -> Text(
+                "No older posts available.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Matched to the dock at the bottom: its slots are 48 dp across and its icons
+ * are Material's default 24 dp. Two controls of the same app should not be two
+ * different sizes.
+ */
+private val BUTTON_SIZE = 48.dp
+private val ICON_SIZE = 24.dp
+
+private const val LOAD_MORE_THRESHOLD = 5
+
+/** Posts scrolled past before the way back becomes worth a button. */
+private const val BACK_TO_TOP_AFTER = 5
+
+@Composable
+private fun EmptyState(
+    title: String,
+    message: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // A zone centred in the space, like every empty screen, so an empty
+    // Home still carries the wallpaper's colour.
+    EmptyZone(
+        title = title,
+        message = message,
+        actionLabel = actionLabel,
+        onAction = onAction,
+        modifier = modifier.fillMaxSize()
+    )
+}

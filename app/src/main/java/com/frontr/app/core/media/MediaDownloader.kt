@@ -1,0 +1,148 @@
+package com.frontr.app.core.media
+
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+import com.frontr.app.core.model.MediaItem
+import com.frontr.app.core.model.MediaType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import java.io.File
+
+/**
+ * Fetches media to disk, to one of two places.
+ *
+ * Uses the system DownloadManager rather than fetching bytes ourselves: it
+ * survives the app being backgrounded, shows progress in the notification
+ * shade, and needs no storage permission on modern Android.
+ *
+ * A file the reader asked for goes to Downloads/Frontr, theirs to keep and to
+ * move. A file saved automatically goes to the app's own folder, where the
+ * post it belongs to can find it again, see [OfflineMedia]. They used to
+ * share the public Downloads folder, which buried a deliberate save under
+ * forty automatic ones.
+ */
+class MediaDownloader(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    /** The saveable file behind a video address, when the two differ. */
+    private val videoFile: suspend (playlist: String) -> String?
+) {
+
+    /**
+     * A file the reader asked for. Lands in Downloads/Frontr, with a toast.
+     *
+     * A video that plays from an HLS playlist, pieces that cannot be saved as
+     * one file, is resolved to its file first. Reddit's videos are MP4 files
+     * already, so this path stays for playlists only.
+     */
+    fun download(item: MediaItem, authorHandle: String) {
+        if (!item.downloadUrl.isPlaylist()) {
+            enqueuePublic(item, authorHandle)
+            return
+        }
+        toast("Finding the video file")
+        scope.launch {
+            val file = videoFile(item.downloadUrl)
+            if (file == null) {
+                toast("This video's file could not be found")
+            } else {
+                enqueuePublic(item.copy(downloadUrl = file), authorHandle)
+            }
+        }
+    }
+
+    private fun enqueuePublic(item: MediaItem, authorHandle: String) {
+        val fileName = buildFileName(item, authorHandle, item.downloadUrl)
+        val request = baseRequest(item, fileName)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            // A sub folder of a public collection, still no permission needed.
+            .setDestinationInExternalPublicDir(
+                Environment.DIRECTORY_DOWNLOADS,
+                "$PUBLIC_FOLDER/$fileName"
+            )
+
+        val manager = manager()
+        if (manager == null) {
+            toast("Downloads are unavailable on this device")
+            return
+        }
+        runCatching { manager.enqueue(request) }
+            .onSuccess { toast("Saving to Downloads/$PUBLIC_FOLDER") }
+            .onFailure { toast("Could not start the download") }
+    }
+
+    /**
+     * A file saved without being asked, for offline reading.
+     *
+     * No toast and no line of its own in the shade: a reader who turned on
+     * automatic saving does not want forty lines for one refresh. The batch
+     * gets one line instead, see [MediaSavingNotice]. Hiding the per file line
+     * needs DOWNLOAD_WITHOUT_NOTIFICATION in the manifest, without it the
+     * enqueue itself throws.
+     *
+     * Returns the download id to follow, or null when the file was already
+     * there or could not even be queued, so the caller can say so in the log
+     * rather than guess.
+     */
+    suspend fun cache(target: File, item: MediaItem): Long? {
+        if (target.exists()) return null
+        val manager = manager() ?: return null
+        val source = if (item.downloadUrl.isPlaylist()) {
+            item.copy(downloadUrl = videoFile(item.downloadUrl) ?: return null)
+        } else {
+            item
+        }
+        val request = baseRequest(source, target.name)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN)
+            .setDestinationInExternalFilesDir(context, OfflineMedia.FOLDER, target.name)
+        return runCatching { manager.enqueue(request) }.getOrNull()
+    }
+
+    private fun manager() = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+
+    private fun String.isPlaylist(): Boolean = substringBefore('?').endsWith(".m3u8")
+
+    private fun baseRequest(item: MediaItem, title: String) =
+        DownloadManager.Request(Uri.parse(item.downloadUrl))
+            .setTitle(title)
+            .setDescription("Saving from Frontr")
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+
+    /**
+     * Media addresses rarely end in a usable file name. Build a predictable
+     * one instead.
+     */
+    private fun buildFileName(item: MediaItem, authorHandle: String, url: String): String {
+        val extension = when {
+            item.type == MediaType.PHOTO -> guessExtension(url, "jpg")
+            item.type == MediaType.GIF -> "mp4"
+            else -> guessExtension(url, "mp4")
+        }
+        val stamp = System.currentTimeMillis()
+        return "frontr_${authorHandle}_$stamp.$extension"
+    }
+
+    private fun guessExtension(url: String, fallback: String): String {
+        val candidates = listOf("jpg", "jpeg", "png", "webp", "gif", "mp4", "m3u8")
+        val lower = url.lowercase()
+        return candidates.firstOrNull { lower.contains(".$it") || lower.contains("%2e$it") }
+            ?.takeIf { it != "m3u8" }
+            ?: fallback
+    }
+
+    /** Always from the main thread: a video's file is found on another, and a toast needs a looper. */
+    private fun toast(message: String) {
+        Handler(Looper.getMainLooper()).post { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
+    }
+
+    private companion object {
+        /** Deliberate saves get their own drawer inside Downloads. */
+        const val PUBLIC_FOLDER = "Frontr"
+    }
+}

@@ -1,0 +1,493 @@
+package com.frontr.app.navigation
+
+import com.frontr.app.core.link.RedditLink
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.EnterTransition
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.navigation.NavHostController
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.frontr.app.core.link.LinkRouter
+import com.frontr.app.core.media.LocalOfflineMedia
+import com.frontr.app.core.media.OfflineMedia
+import org.koin.compose.koinInject
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.frontr.app.core.model.Post
+import com.frontr.app.data.accounts.AccountStore
+import com.frontr.app.data.settings.SettingsStore
+import com.frontr.app.feature.welcome.WelcomeScreen
+import com.frontr.app.data.settings.StartTab
+import com.frontr.app.core.model.PostKind
+import com.frontr.app.feature.accounts.AccountsScreen
+import com.frontr.app.feature.accounts.FoldersScreen
+import com.frontr.app.feature.debug.DebugLogScreen
+import com.frontr.app.feature.media.SavedMediaScreen
+import com.frontr.app.feature.feed.FeedScreen
+import com.frontr.app.feature.post.PostDetailScreen
+import com.frontr.app.feature.search.SearchScreen
+import com.frontr.app.feature.settings.SettingsScreen
+import com.frontr.app.feature.timeline.TimelineScreen
+import com.frontr.app.ui.component.DockClearance
+import com.frontr.app.ui.component.DockItem
+import com.frontr.app.ui.component.FloatingDock
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import com.frontr.app.ui.component.LocalDockPadding
+import com.frontr.app.ui.component.LocalNavAnimatedScope
+import com.frontr.app.ui.component.LocalSharedTransitionScope
+import com.frontr.app.ui.component.LocalInlinePlaybackAllowed
+import com.frontr.app.ui.component.SideDockClearance
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.launch
+
+@Composable
+fun FrontrApp() {
+    val navController = rememberNavController()
+    val links: LinkRouter = koinInject()
+    val pending by links.pending.collectAsState()
+    val platformUris = LocalUriHandler.current
+
+    // Re-read on every return to the app, because DownloadManager finishes in
+    // its own time: files queued during the last visit are on disk now, and
+    // files the reader deleted from a file manager are not.
+    val offlineMedia: OfflineMedia = koinInject()
+    val appScope = rememberCoroutineScope()
+    LifecycleResumeEffect(offlineMedia) {
+        appScope.launch { offlineMedia.refresh() }
+        onPauseOrDispose { }
+    }
+
+    fun show(link: RedditLink) {
+        when (link) {
+            is RedditLink.Sub -> navController.navigate(Routes.feed(link.name.lowercase()))
+            is RedditLink.Post -> navController.navigate(Routes.post(link.thingId, link.sub?.lowercase()))
+        }
+    }
+
+    // Links from other apps, dropped off by the activity.
+    LaunchedEffect(pending) {
+        pending?.let {
+            show(it)
+            links.consume()
+        }
+    }
+
+    // Every tap on a link inside the app goes through here. Reddit subs
+    // and posts open in Frontr, anything else goes to the browser.
+    val uris = remember(platformUris) {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                val link = links.parse(uri)
+                if (link != null) show(link) else platformUris.openUri(uri)
+            }
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalUriHandler provides uris,
+        // Every screen that shows media can now ask for the saved copy.
+        LocalOfflineMedia provides offlineMedia
+    ) {
+        FrontrNavHost(navController)
+    }
+}
+
+@Composable
+private fun FrontrNavHost(navController: NavHostController) {
+    // This Scaffold is the only owner of the window insets. Screens below open
+    // their own Scaffold with a TopAppBar, and without consuming here each of
+    // them would add the status bar and the navigation bar a second time,
+    // which left a band of empty background above and below Home.
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { innerPadding ->
+        // Owns the shared elements. A post's avatar flies from its card to the
+        // opened post instead of one fading out while the other fades in. Only
+        // destinations that show posts hand their animated scope down.
+        SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+        NavHost(
+            navController = navController,
+            startDestination = Routes.MAIN,
+            // Opening scales up from slightly small, going back scales down.
+            // The same shape as the platform's predictive back, so a screen
+            // dismissed by the gesture keeps moving the way it started rather
+            // than jumping into a different animation halfway.
+            enterTransition = {
+                scaleIn(initialScale = 0.94f, animationSpec = tween(NAV_MS)) +
+                    fadeIn(animationSpec = tween(NAV_MS))
+            },
+            exitTransition = { fadeOut(animationSpec = tween(NAV_MS)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(NAV_MS)) },
+            popExitTransition = {
+                scaleOut(targetScale = 0.94f, animationSpec = tween(NAV_MS)) +
+                    fadeOut(animationSpec = tween(NAV_MS))
+            },
+            // The back gesture has transitions of its own, and without these
+            // the library's defaults played: a shrink to 70% on a slow spring
+            // with no fade, so the page hung small over the one behind and
+            // then vanished in a single frame (seen frame by frame in a
+            // screencast and again on the emulator). Now the page follows the
+            // thumb, shrinking to 85% and drifting the way the thumb goes, the
+            // screen behind is simply there, and the fade only starts half way
+            // through, which in practice is after the thumb lets go: no
+            // off screen layer while the page is being dragged.
+            predictivePopEnterTransition = { EnterTransition.None },
+            // Decelerating: the page moves most in the first millimetres of
+            // the drag, so it is seen to follow the thumb at once. The default
+            // ease in left it still for the first 150 ms, and linear barely
+            // moved it while the gesture's progress was still small.
+            predictivePopExitTransition = { edge ->
+                scaleOut(targetScale = 0.85f, animationSpec = tween(PREDICTIVE_MS, easing = LinearOutSlowInEasing)) +
+                    slideOutHorizontally(tween(PREDICTIVE_MS, easing = LinearOutSlowInEasing)) { full ->
+                        if (edge == BackEventCompat.EDGE_RIGHT) -full / 6 else full / 6
+                    } +
+                    fadeOut(tween(PREDICTIVE_MS / 2, delayMillis = PREDICTIVE_MS / 2, easing = LinearEasing))
+            },
+            modifier = Modifier
+                .fillMaxSize()
+        ) {
+            composable(Routes.MAIN) {
+                // True only once this screen has fully arrived and nothing
+                // animates over it. It keeps the inline video of Home from
+                // playing under a page being dragged away by the back gesture:
+                // a video surface inside a layer that moves every frame is
+                // the most expensive thing these apps can draw.
+                val settled = transition.currentState == transition.targetState &&
+                    transition.targetState == EnterExitState.Visible
+                CompositionLocalProvider(LocalNavAnimatedScope provides this) {
+                MainTabs(
+                    settled = settled,
+                    onOpenLog = { navController.navigate(Routes.DEBUG_LOG) },
+                    onOpenDebugLog = { navController.navigate(Routes.DEBUG_LOG) },
+                    onOpenSavedMedia = { navController.navigate(Routes.SAVED_MEDIA) },
+                    onOpenFolders = { navController.navigate(Routes.FOLDERS) },
+                    onOpenFeed = { handle -> navController.navigate(Routes.feed(handle)) },
+                    onOpenPost = { post -> navController.navigate(Routes.post(post.id, post.cacheOwner())) },
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) }
+                )
+                }
+            }
+            composable(Routes.SEARCH) {
+                CompositionLocalProvider(LocalNavAnimatedScope provides this) {
+                ReadableScroll {
+                    SearchScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenPost = { post -> navController.navigate(Routes.post(post.id, post.cacheOwner())) }
+                    )
+                }
+                }
+            }
+            composable(Routes.DEBUG_LOG) {
+                ReadableScroll {
+                    DebugLogScreen(onBack = { navController.popBackStack() })
+                }
+            }
+            composable(
+                route = Routes.FEED_PATTERN,
+                arguments = listOf(navArgument("handle") { type = NavType.StringType })
+            ) { entry ->
+                CompositionLocalProvider(LocalNavAnimatedScope provides this) {
+                ReadableScroll {
+                    FeedScreen(
+                        handle = entry.arguments?.getString("handle").orEmpty(),
+                        onBack = { navController.popBackStack() },
+                        onOpenLog = { navController.navigate(Routes.DEBUG_LOG) },
+                        onOpenPost = { post ->
+                            navController.navigate(Routes.post(post.id, entry.arguments?.getString("handle").orEmpty()))
+                        }
+                    )
+                }
+                }
+            }
+            composable(
+                route = Routes.POST_PATTERN,
+                arguments = listOf(
+                    navArgument("id") { type = NavType.StringType },
+                    navArgument("from") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { entry ->
+                CompositionLocalProvider(LocalNavAnimatedScope provides this) {
+                ReadableScroll {
+                    PostDetailScreen(
+                        id = entry.arguments?.getString("id").orEmpty(),
+                        from = entry.arguments?.getString("from"),
+                        onBack = { navController.popBackStack() },
+                        onOpenProfile = { handle -> navController.navigate(Routes.feed(handle)) },
+                        onOpenPost = { post -> navController.navigate(Routes.post(post.id, post.authorHandle)) }
+                    )
+                }
+                }
+            }
+            composable(Routes.FOLDERS) {
+                ReadableScroll {
+                    FoldersScreen(onBack = { navController.popBackStack() })
+                }
+            }
+            composable(Routes.SAVED_MEDIA) {
+                ReadableScroll {
+                    SavedMediaScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenPost = { id -> navController.navigate(Routes.post(id, null)) }
+                    )
+                }
+            }
+        }
+        }
+        }
+    }
+}
+
+/**
+ * The account whose cache file holds this post. A repost is stored with the
+ * account that reposted it, everything else with its author.
+ */
+private fun Post.cacheOwner(): String =
+    if (kind == PostKind.REPOST) relatedHandle ?: authorHandle else authorHandle
+
+/**
+ * The three tabs side by side in one pager. On a phone a swipe moves between
+ * them, with the floating dock on top. From 600 dp wide, a tablet, a foldable
+ * or a phone on its side, the same dock stands upright on the left edge,
+ * vertically centred, and the content is centred at a readable width. Back from Accounts or Settings
+ * returns to Home before leaving the app, which is what people expect from tabs.
+ */
+@Composable
+private fun MainTabs(
+    settled: Boolean,
+    onOpenLog: () -> Unit,
+    onOpenDebugLog: () -> Unit,
+    onOpenSavedMedia: () -> Unit,
+    onOpenFolders: () -> Unit,
+    onOpenFeed: (String) -> Unit,
+    onOpenPost: (Post) -> Unit,
+    onOpenSearch: () -> Unit
+) {
+    val tabs = TopDestination.entries
+    val store: SettingsStore = koinInject()
+    // Read once: the start tab only matters when the app opens. After that
+    // the pager state is saved, and coming back from a post keeps the tab.
+    val initialPage = remember {
+        val settings = store.current
+        when (settings.startTab) {
+            StartTab.HOME -> TopDestination.TIMELINE.ordinal
+            StartTab.ACCOUNTS -> TopDestination.ACCOUNTS.ordinal
+            StartTab.LAST -> settings.lastTab.coerceIn(0, tabs.size - 1)
+        }
+    }
+    // Outside the width check, so turning a tablet or unfolding a phone keeps
+    // the current tab and every scroll position.
+    val pager = rememberPagerState(initialPage = initialPage, pageCount = { tabs.size })
+    val scope = rememberCoroutineScope()
+
+    // The guide opens by itself only for someone who follows nobody yet and
+    // never closed it. Saveable, so turning the device keeps it open.
+    val accounts: AccountStore = koinInject()
+    var showWelcome by rememberSaveable {
+        mutableStateOf(!store.current.welcomeSeen && accounts.accounts.value.isEmpty())
+    }
+
+    // Remembered on every settled switch, so choosing "Last tab" later in
+    // Settings already knows where the reader was.
+    LaunchedEffect(pager.settledPage) {
+        val page = pager.settledPage
+        if (store.current.lastTab != page) store.update { it.copy(lastTab = page) }
+    }
+
+    val haptics = LocalHapticFeedback.current
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val side = WidthClass.of(maxWidth).usesSideDock
+
+        fun go(index: Int) {
+            // A tick on every tab change, the way the system keyboard and the
+            // platform's own navigation confirm a switch. Silent gestures feel
+            // unacknowledged on a phone held in one hand.
+            if (index != pager.currentPage) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            scope.launch {
+                // On the side, tabs switch in place, like a navigation rail.
+                // At the bottom they slide, because there pages are also swiped.
+                if (side) pager.scrollToPage(index) else pager.animateScrollToPage(index)
+            }
+        }
+
+        // Predictive back, the platform gesture since Android 14. The tabs
+        // shrink under the finger while the gesture is held, spring back if it
+        // is abandoned, and only then does the tab actually change. A plain
+        // BackHandler swallowed the gesture and showed nothing until it was
+        // over, which read as an unresponsive app.
+        var backProgress by remember { mutableFloatStateOf(0f) }
+        PredictiveBackHandler(enabled = pager.currentPage != 0) { events ->
+            try {
+                events.collect { event -> backProgress = event.progress }
+                backProgress = 0f
+                go(0)
+            } catch (cancelled: CancellationException) {
+                backProgress = 0f
+                throw cancelled
+            }
+        }
+
+        fun closeWelcome(openAccounts: Boolean) {
+            showWelcome = false
+            if (!store.current.welcomeSeen) store.update { it.copy(welcomeSeen = true) }
+            if (openAccounts) go(TopDestination.ACCOUNTS.ordinal)
+        }
+        // Declared after the tab one, so back closes the guide first.
+        PredictiveBackHandler(enabled = showWelcome) { events ->
+            try {
+                events.collect { }
+                closeWelcome(openAccounts = false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            }
+        }
+
+        val pages: @Composable (Modifier) -> Unit = { modifier ->
+            HorizontalPager(
+                state = pager,
+                // All three stay alive, so switching tabs never reloads or
+                // loses the scroll position.
+                beyondViewportPageCount = tabs.size - 1,
+                // With the side dock a sideways swipe would only fight
+                // horizontal gestures in the wide content.
+                userScrollEnabled = !side,
+                // A quarter of the width at most, the platform's own amount.
+                modifier = modifier.graphicsLayer {
+                    val shrink = 1f - 0.08f * backProgress
+                    scaleX = shrink
+                    scaleY = shrink
+                }
+            ) { page ->
+                // Videos in a list play only while that list is the tab in
+                // sight. The pager keeps the others alive next to it.
+                val inSight = pager.settledPage == page && !showWelcome && settled
+                CompositionLocalProvider(LocalInlinePlaybackAllowed provides inSight) {
+                ReadableScroll {
+                    when (tabs[page]) {
+                        TopDestination.TIMELINE -> TimelineScreen(
+                            onOpenLog = onOpenLog,
+                            onOpenAccounts = { go(TopDestination.ACCOUNTS.ordinal) },
+                            onOpenPost = onOpenPost,
+                            onOpenSearch = onOpenSearch
+                        )
+                        // Every scrolling screen takes the inset, so no margin of a
+                        // tablet is a dead zone.
+                        TopDestination.ACCOUNTS -> ReadableScroll {
+                            AccountsScreen(onOpenFeed = onOpenFeed, onOpenFolders = onOpenFolders)
+                        }
+                        TopDestination.SETTINGS -> ReadableScroll {
+                            SettingsScreen(
+                                onOpenDebugLog = onOpenDebugLog,
+                                onOpenSavedMedia = onOpenSavedMedia,
+                                onOpenWelcome = { showWelcome = true }
+                            )
+                        }
+                    }
+                }
+                }
+            }
+        }
+
+        // The screens draw under the navigation bar, so what sits at the
+        // bottom of them clears it on top of the dock.
+        val navigationBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        if (side) {
+            // Where the margins around the 720 dp column are wide enough, the
+            // pill sits in the left one and the column stays centred on the
+            // screen. In a narrower window the content moves right to clear it.
+            val clearsPill = maxWidth - ReadableWidth >= SideDockClearance * 2
+            Box(Modifier.fillMaxSize()) {
+                // No dock at the bottom, only the navigation bar to clear.
+                CompositionLocalProvider(LocalDockPadding provides navigationBar) {
+                    pages(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(start = if (clearsPill) 0.dp else SideDockClearance)
+                    )
+                }
+
+                FloatingDock(
+                    items = tabs.map { DockItem(it.icon, it.label) },
+                    position = pager.currentPage + pager.currentPageOffsetFraction,
+                    onSelect = ::go,
+                    vertical = true,
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp)
+                )
+            }
+        } else {
+            Box(Modifier.fillMaxSize()) {
+                CompositionLocalProvider(LocalDockPadding provides DockClearance + navigationBar) {
+                    pages(Modifier.fillMaxSize())
+                }
+
+                FloatingDock(
+                    items = tabs.map { DockItem(it.icon, it.label) },
+                    position = pager.currentPage + pager.currentPageOffsetFraction,
+                    onSelect = ::go,
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp)
+                )
+            }
+        }
+
+        // Above the tabs and the dock. A Surface also stops touches from
+        // reaching the screen underneath.
+        if (showWelcome) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Readable { WelcomeScreen(onFinish = ::closeWelcome) }
+            }
+        }
+    }
+}
+
+/** Long enough to be read as motion, short enough not to be waited on. */
+private const val NAV_MS = 260
+
+/** The back gesture's transition, seeked under the thumb and finished after it. */
+private const val PREDICTIVE_MS = 300
