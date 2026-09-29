@@ -38,9 +38,12 @@ internal object RedditParser {
      * page starts. [name] is the sub as followed.
      */
     fun feed(html: String, name: String, nowMillis: Long): Feed {
-        val posts = posts(html)
+        val header = tags(html, "shreddit-subreddit-header").firstOrNull()
+        val icon = subIcon(html)
+        // Every post of a sub's page is the sub's, so each wears its icon.
+        val posts = posts(html).map { if (icon != null && it.avatarUrl == null) it.copy(avatarUrl = icon) else it }
         val display = posts.firstOrNull()?.authorName
-            ?: tags(html, "shreddit-subreddit-header").firstOrNull()?.get("prefixed-name")
+            ?: header?.get("prefixed-name")
             ?: "r/$name"
         return Feed(
             handle = name.lowercase(),
@@ -48,9 +51,60 @@ internal object RedditParser {
             posts = posts,
             fetchedFromHost = HOST,
             fetchedAtMillis = nowMillis,
-            nextCursor = nextPage(html)
+            avatarUrl = icon,
+            bio = header?.get("description")?.trim()?.takeIf { it.isNotEmpty() },
+            nextCursor = nextPage(html),
+            bannerUrl = subBanner(html)
         )
     }
+
+    /**
+     * The sub's icon, as its page names it: in the page data Reddit keeps
+     * for its own scripts, else on the icon picture of the sub's header.
+     * Only a sub's first page has it, further pages do not.
+     */
+    fun subIcon(html: String): String? {
+        val data = tags(html, "reddit-page-data").firstNotNullOfOrNull { it["data"] }
+        val fromData = data?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+            ?.let { it["subreddit"] as? JsonObject }
+            ?.let { (it["communityIcon"] as? JsonPrimitive)?.content }
+        // A listing of many subs shows each post's sub icon with the same
+        // class: only the one marked with this sub's own id is its icon.
+        val fromHeader = subId(html)?.let { id ->
+            tags(html, "img").firstOrNull { "community-icon-$id" in it["class"].orEmpty().split(' ') }?.get("src")
+        }
+        return (fromData ?: fromHeader)?.takeIf { it.startsWith("https://") }
+    }
+
+    /**
+     * The sub's banner: the picture the header block's style points at,
+     * several sizes named as custom properties, the largest taken. The style
+     * is empty on a sub without a banner. Else a banner file of this very sub
+     * named anywhere in the page, where Reddit's own data keeps it,
+     * without the size query, which only works signed.
+     */
+    fun subBanner(html: String): String? {
+        val urls = BANNER_URL.findAll(bannerStyle(html).orEmpty()).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        val styled = BANNER_SIZES.firstNotNullOfOrNull { size -> urls.firstOrNull { it.first == size }?.second }
+            ?: urls.firstOrNull()?.second
+        val named = subId(html)?.let { id -> Regex("https://styles\\.redditmedia\\.com/$id/styles/bannerBackgroundImage_[^\"'&\\s)?]+").find(html)?.value }
+        return (styled?.trim('\'', '"', ' ') ?: named)?.takeIf { it.startsWith("https://") }
+    }
+
+    /** What a sub's page gave for its header, for the activity log. */
+    fun headerNote(html: String): String =
+        "icon ${if (subIcon(html) != null) "found" else "missing"}, " +
+            "banner ${subBanner(html) ?: "none"}, banner style \"${bannerStyle(html)?.take(TEXT_LIMIT) ?: "no banner block"}\""
+
+    private fun bannerStyle(html: String): String? {
+        val at = html.indexOf("id=\"subreddit-banner-img\"").takeIf { it >= 0 } ?: return null
+        val open = html.lastIndexOf('<', at)
+        val close = html.indexOf('>', at).takeIf { it > 0 } ?: return null
+        return attributes(html.substring(open, close))["style"]
+    }
+
+    private fun subId(html: String): String? =
+        tags(html, "shreddit-subreddit-header").firstNotNullOfOrNull { it["subreddit-id"] }?.takeIf { it.matches(Regex("t5_[a-z0-9]+")) }
 
     fun posts(html: String): List<Post> = tags(html, "shreddit-post").mapNotNull { post(it, html, body = null) }
 
@@ -99,7 +153,7 @@ internal object RedditParser {
     fun conversation(html: String): Conversation? {
         val tag = tags(html, "shreddit-post").firstOrNull() ?: return null
         val id = tag["id"] ?: return null
-        val main = post(tag, html, body = richText(html, "$id-post-rtjson-content")) ?: return null
+        val main = post(tag, html, body = richText(html, "$id-post-rtjson-content"))?.let { it.copy(avatarUrl = it.avatarUrl ?: subIcon(html)) } ?: return null
         val sub = tag["subreddit-name"].orEmpty().lowercase()
         val chains = mutableListOf<MutableList<Post>>()
         for (comment in tags(html, "shreddit-comment")) {
@@ -263,6 +317,9 @@ internal object RedditParser {
         .optionalStart().appendOffset("+HH:MM", "Z").optionalEnd()
         .toFormatter()
 
+    /** A url(...) in a style, with the property it is set on, if any. */
+    private val BANNER_URL = Regex("""(?:(--[a-z-]+)\s*:\s*)?url\(([^)]+)\)""")
+    private val BANNER_SIZES = listOf("--large-banner", "--x-large-banner", "--medium-banner", "--small-banner")
     private val ATTRIBUTE = Regex("""([a-zA-Z][a-zA-Z0-9:-]*)="([^"]*)"""")
     private val ENTITY = Regex("&(#?[a-zA-Z0-9]+);")
     private val NAMED = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ")

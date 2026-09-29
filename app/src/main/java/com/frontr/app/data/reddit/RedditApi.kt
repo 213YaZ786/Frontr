@@ -72,6 +72,10 @@ class RedditApi(
                     check(sub, url, page)
                     Outcome.Failure(AppError.ClientRefused(RedditParser.HOST, 200))
                 } else {
+                    // Whether the sub's icon and banner were found, and what
+                    // the banner block held, so a log sent in tells a sub
+                    // without a banner from a page Frontr misread.
+                    if (cursor == null) log.record(kind, url, "sub header", detail = RedditParser.headerNote(page))
                     Outcome.Success(feed)
                 }
             }

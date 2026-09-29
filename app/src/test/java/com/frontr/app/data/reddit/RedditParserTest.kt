@@ -53,6 +53,37 @@ class RedditParserTest {
     }
 
     @Test
+    fun `a sub page gives its icon, banner and description, and its posts wear the icon`() {
+        val page = SUB_HEADER.replace("BANNER_STYLE", "--small-banner:url(https://styles.redditmedia.com/t5_1/styles/banner_s.png);" +
+            " --large-banner:url(&quot;https://styles.redditmedia.com/t5_1/styles/banner_l.png&quot;)") + LISTING
+        val feed = RedditParser.feed(page, "examples", nowMillis = 1_000)
+        assertEquals("https://styles.redditmedia.com/t5_1/styles/communityIcon_x.png?width=128&frame=1", feed.avatarUrl)
+        assertEquals("https://styles.redditmedia.com/t5_1/styles/banner_l.png", feed.bannerUrl)
+        assertEquals("Examples & more, for everyone.", feed.bio)
+        assertTrue(feed.posts.all { it.avatarUrl == feed.avatarUrl })
+    }
+
+    @Test
+    fun `a sub without a banner has none, and the header picture gives the icon`() {
+        val page = SUB_HEADER.replace("BANNER_STYLE", "").replace(Regex("<reddit-page-data[^>]*></reddit-page-data>"), "")
+        assertNull(RedditParser.subBanner(page))
+        assertEquals("https://b.thumbs.redditmedia.com/header.png", RedditParser.subIcon(page))
+        assertNull(RedditParser.subIcon(LISTING))
+        // A post's sub icon in a listing of many subs is not the page's.
+        val listing = page.replace("community-icon-t5_1", "community-icon-t5_9")
+        assertNull(RedditParser.subIcon(listing))
+        assertNull(RedditParser.feed(LISTING, "examples", nowMillis = 1_000).posts.first().avatarUrl)
+    }
+
+    @Test
+    fun `a banner named only in the page data is found, never another sub's`() {
+        val page = SUB_HEADER.replace("BANNER_STYLE", "") +
+            "<x data=\"https://styles.redditmedia.com/t5_2/styles/bannerBackgroundImage_other.png\"></x>" +
+            "<x data=\"{&quot;banner&quot;:&quot;https://styles.redditmedia.com/t5_1/styles/bannerBackgroundImage_mine.png?width=4000&amp;s=1&quot;}\"></x>"
+        assertEquals("https://styles.redditmedia.com/t5_1/styles/bannerBackgroundImage_mine.png", RedditParser.subBanner(page))
+    }
+
+    @Test
     fun `the next page is the more posts partial, not the side column`() {
         assertEquals(
             "/svc/shreddit/community-more-posts/best/?after=dDNf&t=DAY&name=Examples",
@@ -171,3 +202,10 @@ class RedditParserTest {
         """.trimIndent()
     }
 }
+
+private val SUB_HEADER = """
+<reddit-page-data data="{&quot;subreddit&quot;:{&quot;id&quot;:&quot;t5_1&quot;,&quot;prefixedName&quot;:&quot;r/Examples&quot;,&quot;name&quot;:&quot;Examples&quot;,&quot;communityIcon&quot;:&quot;https://styles.redditmedia.com/t5_1/styles/communityIcon_x.png?width=128&amp;frame=1&quot;}}"></reddit-page-data>
+<shreddit-subreddit-header name="Examples" subreddit-id="t5_1" display-name="Examples" prefixed-name="r/Examples" description="Examples &amp; more, for everyone. " weekly-active-users="4"></shreddit-subreddit-header>
+<div class="masthead"><div class="@container"><div id="subreddit-banner-img" class="community-banner relative bg-center" style="BANNER_STYLE"></div></div></div>
+<span rpl id="subreddit-icon-img"><img src="https://b.thumbs.redditmedia.com/header.png" alt="" class="mb-0 shreddit-subreddit-icon__icon rounded-full community-icon-t5_1 w-full h-full" width="40" style="color: #11483C;" loading="lazy"></span>
+"""

@@ -143,10 +143,14 @@ class FeedCache(
             seenAgain.isNotEmpty() &&
             existing.nextCursor != null
 
+        // Only a sub's first page names its icon: posts from further pages
+        // wear the one kept.
+        val icon = incoming.avatarUrl ?: existing.avatarUrl
         val combined = incoming.copy(
-            posts = (refreshed + newPosts).sortedWith(PROFILE_ORDER),
+            posts = (refreshed + newPosts).sortedWith(PROFILE_ORDER)
+                .map { if (icon != null && it.avatarUrl == null) it.copy(avatarUrl = icon) else it },
             displayName = incoming.displayName.ifBlank { existing.displayName },
-            avatarUrl = incoming.avatarUrl ?: existing.avatarUrl,
+            avatarUrl = icon,
             bio = incoming.bio ?: existing.bio,
             bannerUrl = incoming.bannerUrl ?: existing.bannerUrl,
             joined = incoming.joined ?: existing.joined,
