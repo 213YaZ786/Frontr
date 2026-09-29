@@ -1,7 +1,8 @@
 package com.frontr.app.feature.timeline
 
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import com.frontr.app.ui.component.MeltingDots
+import com.frontr.app.ui.component.MeltingPullIndicator
 import com.frontr.app.ui.component.FloatingRoundButton
 import com.frontr.app.ui.component.ScrollUpButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -32,7 +33,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.FilledTonalIconButton
@@ -181,7 +181,7 @@ fun TimelineScreen(
                 state = pull,
                 // Under the status bar, where the list starts, not behind it.
                 indicator = {
-                    PullToRefreshDefaults.Indicator(
+                    MeltingPullIndicator(
                         state = pull,
                         isRefreshing = state.loading,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
@@ -228,7 +228,7 @@ fun TimelineScreen(
                 state = pull,
                 // Under the status bar, where the list starts, not behind it.
                 indicator = {
-                    PullToRefreshDefaults.Indicator(
+                    MeltingPullIndicator(
                         state = pull,
                         isRefreshing = state.loading,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
@@ -487,10 +487,7 @@ private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         when {
-            state.loadingMore -> CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp
-            )
+            state.loadingMore -> MeltingDots(size = 28.dp)
             state.pagingFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     "Couldn't load older posts. Reddit is busy, " +

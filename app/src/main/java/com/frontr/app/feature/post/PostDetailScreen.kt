@@ -1,5 +1,6 @@
 package com.frontr.app.feature.post
 
+import com.frontr.app.ui.component.MeltingDots
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.ui.theme.zone
@@ -28,7 +29,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -143,7 +143,7 @@ fun PostDetailScreen(
                             modifier = Modifier.align(Alignment.Center).padding(32.dp)
                         )
                 }
-                else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                else -> MeltingDots(Modifier.align(Alignment.Center), size = 40.dp)
             }
         }
     }
@@ -234,7 +234,7 @@ private fun ConversationView(
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    MeltingDots(size = 22.dp)
                     Text("Loading replies", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
