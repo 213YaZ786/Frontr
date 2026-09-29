@@ -1,5 +1,6 @@
 package com.frontr.app.di
 
+import com.frontr.app.core.link.RedirectResolver
 import com.frontr.app.data.reddit.RedditApi
 import com.frontr.app.core.debug.LogExporter
 import com.frontr.app.core.debug.RequestLog
@@ -44,6 +45,7 @@ val appModule = module {
     single(named("appScope")) { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
 
     single { RequestLog() }
+    single { RedirectResolver() }
     single { LogExporter(androidContext()) }
     single { HostThrottle() }
     // The phone's own web engine: its identity for every request, its cookie
