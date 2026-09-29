@@ -37,6 +37,10 @@ data class Post(
     fun mergedWith(fresh: Post): Post {
         if (fresh.id != id) return this
         val merged = copy(
+            // A sub's list gives a text post its title only, its own page
+            // the title and the body: the fuller text wins.
+            text = if (fresh.text.length > text.length) fresh.text else text,
+            links = (links + fresh.links).distinct(),
             avatarUrl = fresh.avatarUrl ?: avatarUrl,
             media = media.ifEmpty { fresh.media },
             quoted = fresh.quoted ?: quoted,
