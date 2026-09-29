@@ -1,5 +1,7 @@
 package com.frontr.app.feature.feed
 
+import com.frontr.app.ui.component.ZoneAlertDialog
+import com.frontr.app.ui.component.QuietButton
 import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.component.RejectOnFailure
 import com.frontr.app.ui.component.rememberHaptics
@@ -93,6 +95,21 @@ fun FeedScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val haptics = rememberHaptics()
+    var confirmUnfollow by remember { mutableStateOf(false) }
+    if (confirmUnfollow) {
+        ZoneAlertDialog(
+            onDismissRequest = { confirmUnfollow = false },
+            title = { Text("Unfollow?") },
+            confirmButton = {
+                QuietButton(onClick = {
+                    confirmUnfollow = false
+                    haptics.done()
+                    viewModel.toggleFollow()
+                }) { Text("Unfollow") }
+            },
+            dismissButton = { QuietButton(onClick = { confirmUnfollow = false }) { Text("Cancel") } }
+        )
+    }
     RejectOnFailure(state.error)
     val followed by viewModel.followed.collectAsState()
     val isFollowing = followed.any { it.handle.equals(handle, ignoreCase = true) }
@@ -198,10 +215,14 @@ fun FeedScreen(
                     feed = feed,
                     isFollowing = isFollowing,
                     onToggleFollow = {
-                        // Following or dropping an account is a decision, and
-                        // it answers like one.
-                        haptics.done()
-                        viewModel.toggleFollow()
+                        // Following answers at once; unfollowing asks first, a stray
+                        // tap on "Following" must not drop an account.
+                        if (isFollowing) {
+                            confirmUnfollow = true
+                        } else {
+                            haptics.done()
+                            viewModel.toggleFollow()
+                        }
                     },
                     onOpenAvatar = { small ->
                         viewing = Triple(
