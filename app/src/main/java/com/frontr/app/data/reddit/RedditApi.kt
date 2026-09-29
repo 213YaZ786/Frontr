@@ -51,14 +51,25 @@ class RedditApi(
         val kind = if (cursor == null) RequestLog.Kind.PROFILE else RequestLog.Kind.PAGE
         return when (val read = get(url, kind, sub)) {
             is Outcome.Success -> {
-                val feed = RedditParser.feed(read.value, sub, System.currentTimeMillis())
+                var page = read.value
+                var feed = RedditParser.feed(page, sub, System.currentTimeMillis())
+                if (cursor == null && feed.posts.isEmpty() && !RedditParser.isCheckPage(read.value)) {
+                    // A page that came straight but bare, the frame of the site
+                    // without its posts: the web engine gets the page a browser
+                    // would, posts included.
+                    log.record(kind, url, "page without posts, opening it in the web engine", bodyBytes = read.value.length, detail = RedditParser.describe(read.value))
+                    passing.withLock { browser.open(url) }?.let {
+                        page = it
+                        feed = RedditParser.feed(it, sub, System.currentTimeMillis())
+                    }
+                }
                 // A first page without a single post is not an empty sub, it is
                 // a page Frontr could not read: an interstitial, a block, a change.
                 if (cursor == null && feed.posts.isEmpty()) {
                     // What the page was, so a log sent in shows it: a sub page
                     // that changed shape, a check page, a notice.
-                    log.record(kind, url, "no posts read", httpStatus = 200, bodyBytes = read.value.length, detail = RedditParser.describe(read.value))
-                    check(sub, url, read.value)
+                    log.record(kind, url, "no posts read", httpStatus = 200, bodyBytes = page.length, detail = RedditParser.describe(page))
+                    check(sub, url, page)
                     Outcome.Failure(AppError.ClientRefused(RedditParser.HOST, 200))
                 } else {
                     Outcome.Success(feed)

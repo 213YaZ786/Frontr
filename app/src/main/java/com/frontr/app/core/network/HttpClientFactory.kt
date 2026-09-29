@@ -36,15 +36,12 @@ object HttpClientFactory {
 
         engine {
             config { cookieJar(cookies) }
-            // The browser identity is set here rather than as a default header:
-            // Ktor appends default headers to a request's own, so a request
-            // naming another identity would send both.
+            // Set on the wire, over whatever Ktor put there: Ktor names itself
+            // ktor-client when no identity is given, and appends a default
+            // header to a request's own rather than replacing it. Reddit
+            // answers that name with a page without posts.
             addInterceptor { chain ->
-                val request = chain.request()
-                chain.proceed(
-                    if (request.header("User-Agent") != null) request
-                    else request.newBuilder().header("User-Agent", userAgent).build()
-                )
+                chain.proceed(chain.request().newBuilder().header("User-Agent", userAgent).build())
             }
             addNetworkInterceptor(HttpTrace(log))
         }
