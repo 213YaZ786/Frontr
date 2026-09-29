@@ -1,9 +1,11 @@
 package com.frontr.app.feature.accounts
 
+import com.frontr.app.ui.component.ZoneAlertDialog
+import com.frontr.app.ui.component.ZoneSurface
+import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.component.rememberHaptics
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
-import com.frontr.app.ui.theme.zone
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -102,7 +103,7 @@ fun FoldersScreen(
 
     deleting?.let { name ->
         val count = rows.count { it.folder == name }
-        AlertDialog(
+        ZoneAlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete $name?") },
             text = {
@@ -128,6 +129,9 @@ fun FoldersScreen(
     }
 
     Scaffold(
+        // The page's ground is painted under the whole app, see MainActivity.
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             FloatingTopBar(
                 title = { Text("Folders") },
@@ -182,9 +186,8 @@ private fun FolderZone(
     onFile: (AccountRow) -> Unit
 ) {
     val count = rows.count { it.folder == name }
-    Surface(
+    ZoneSurface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.zone,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
@@ -265,7 +268,7 @@ private fun NameDialog(
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(initial) }
-    AlertDialog(
+    ZoneAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

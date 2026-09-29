@@ -1,11 +1,12 @@
 package com.frontr.app.feature.settings
 
+import com.frontr.app.ui.component.ZoneAlertDialog
+import com.frontr.app.ui.component.ZoneSurface
 import com.frontr.app.ui.component.rememberHaptics
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import com.frontr.app.core.system.BatteryExemption
-import com.frontr.app.ui.theme.zone
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.ScreenBanner
 import com.frontr.app.ui.component.LocalDockPadding
@@ -37,7 +38,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -214,6 +214,12 @@ fun SettingsScreen(
                 checked = settings.pureBlack,
                 enabled = settings.themeMode != ThemeMode.LIGHT,
                 onChange = viewModel::setPureBlack
+            )
+            SwitchRow(
+                title = "Glass effects",
+                summary = "Zones and floating buttons in liquid glass, over a soft light in your wallpaper's colours.",
+                checked = settings.glass,
+                onChange = viewModel::setGlass
             )
             SwitchRow(
                 title = "Show counts",
@@ -452,7 +458,7 @@ fun SettingsScreen(
             onSelect = viewModel::setInterval,
             onDismiss = { dialog = OpenDialog.NONE }
         )
-        OpenDialog.CLEAR -> AlertDialog(
+        OpenDialog.CLEAR -> ZoneAlertDialog(
             onDismissRequest = { dialog = OpenDialog.NONE },
             title = { Text("Clear saved posts?") },
             text = {
@@ -486,9 +492,8 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
             .fillMaxWidth()
             .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 10.dp)
     )
-    Surface(
+    ZoneSurface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.zone,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     ) {
         Column(content = content)
@@ -557,7 +562,7 @@ private fun <T> ChoiceDialog(
     onSelect: (T) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    ZoneAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

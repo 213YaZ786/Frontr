@@ -1,8 +1,9 @@
 package com.frontr.app.feature.media
 
+import com.frontr.app.ui.component.ZoneSurface
+import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
-import com.frontr.app.ui.theme.zone
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,9 @@ fun SavedMediaScreen(
     val context = LocalContext.current
 
     Scaffold(
+        // The page's ground is painted under the whole app, see MainActivity.
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             FloatingTopBar(
                 title = { Text("Saved media") },
@@ -124,10 +128,9 @@ private fun AccountGroup(
 ) {
     val context = LocalContext.current
 
-    Surface(
+    ZoneSurface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.zone
+        shape = RoundedCornerShape(24.dp)
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(

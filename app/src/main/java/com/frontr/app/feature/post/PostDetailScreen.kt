@@ -1,10 +1,11 @@
 package com.frontr.app.feature.post
 
+import com.frontr.app.ui.component.ZoneSurface
+import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.component.RejectOnFailure
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
-import com.frontr.app.ui.theme.zone
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.FloatingTopBar
 import com.frontr.app.ui.component.PostCard
@@ -102,6 +103,9 @@ fun PostDetailScreen(
     val post = state.post
 
     Scaffold(
+        // The page's ground is painted under the whole app, see MainActivity.
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             FloatingTopBar(
                 title = { Text("Post") },
@@ -327,10 +331,9 @@ private fun PostBody(
 
     // The same zone a post gets in a list, so the opened post reads as the
     // same object, only larger.
-    Surface(
+    ZoneSurface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.zone
+        shape = RoundedCornerShape(24.dp)
     ) {
     Column(
         modifier = Modifier
@@ -343,9 +346,10 @@ private fun PostBody(
         Surface(
             onClick = { onOpenProfile(post.authorHandle) },
             shape = RoundedCornerShape(16.dp),
-            // Same colour as the zone it sits in: this is a tap target, not a
-            // second card inside the first one.
-            color = MaterialTheme.colorScheme.zone
+            // See through: this is a tap target on the zone, not a second
+            // card inside the first one.
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Row(
                 modifier = Modifier.padding(vertical = 4.dp),

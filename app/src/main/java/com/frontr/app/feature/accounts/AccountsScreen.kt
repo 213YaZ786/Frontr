@@ -1,5 +1,6 @@
 package com.frontr.app.feature.accounts
 
+import com.frontr.app.ui.component.ZoneSurface
 import com.frontr.app.core.link.LinkCleaner
 import com.frontr.app.ui.component.CleanLinkEffect
 import com.frontr.app.ui.component.rememberHaptics
@@ -16,7 +17,6 @@ import com.frontr.app.ui.component.BannerAction
 import com.frontr.app.ui.component.ScreenBanner
 import com.frontr.app.ui.component.EmptyZone
 import com.frontr.app.ui.component.BoldButton
-import com.frontr.app.ui.theme.zone
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.FolderDialog
 import androidx.compose.runtime.remember
@@ -279,10 +279,9 @@ fun AccountsScreen(
 
 @Composable
 private fun AccountCard(row: AccountRow, onClick: () -> Unit, onFile: (() -> Unit)?) {
-    Surface(
+    ZoneSurface(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.zone,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -322,10 +321,11 @@ private fun AccountCard(row: AccountRow, onClick: () -> Unit, onFile: (() -> Uni
 
 @Composable
 private fun CandidateCard(handle: String, onOpen: () -> Unit, onFollow: () -> Unit) {
-    Surface(
+    ZoneSurface(
         onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
+        accent = true,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(

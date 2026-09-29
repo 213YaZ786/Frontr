@@ -1,5 +1,8 @@
 package com.frontr.app.feature.search
 
+import com.frontr.app.ui.glass.LocalGlass
+import com.frontr.app.ui.glass.groundHere
+import androidx.compose.material3.TopAppBarDefaults
 import com.frontr.app.ui.component.plus
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -76,8 +79,14 @@ fun SearchScreen(
     }
 
     Scaffold(
+        // The page's ground is painted under the whole app, see MainActivity.
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
+                // The page's ground where the bar sits, ambient light included.
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent),
+                modifier = Modifier.groundHere(LocalGlass.current, MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(FrontrIcons.ArrowBack, contentDescription = "Back")

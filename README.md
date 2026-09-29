@@ -12,7 +12,7 @@ Read public Reddit communities on Android, with no account, no tracking and no a
 - **View pictures and videos** full screen, zoom in, and save them to your phone.
 - **Read offline.** Posts you have seen are saved on the phone and stay readable without a connection. Their pictures and videos can be saved automatically too.
 - **Get notified** of new posts, with an optional check in the background.
-- **Choose your look**: light, dark, pure black, text size, and colours that follow your wallpaper.
+- **Choose your look**: light, dark, pure black, text size, colours that follow your wallpaper, and liquid glass zones you can turn off.
 
 ## Privacy
 

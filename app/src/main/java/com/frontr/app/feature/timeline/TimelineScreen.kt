@@ -1,5 +1,11 @@
 package com.frontr.app.feature.timeline
 
+import androidx.compose.ui.graphics.Color
+import com.frontr.app.ui.glass.rememberGlassBackdrop
+import com.frontr.app.ui.glass.glassSource
+import com.frontr.app.ui.glass.LocalGlassBackdrop
+import com.frontr.app.ui.glass.LocalGlass
+import com.frontr.app.ui.component.ZoneSurface
 import com.frontr.app.ui.component.rememberRefreshHaptics
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.frontr.app.ui.component.LoadingMark
@@ -12,7 +18,6 @@ import com.frontr.app.ui.component.EmptyZone
 import com.frontr.app.ui.component.boldBorder
 import com.frontr.app.ui.component.BoldIconButton
 import com.frontr.app.ui.component.BoldButton
-import com.frontr.app.ui.theme.zone
 import com.frontr.app.ui.component.LocalDockPadding
 import com.frontr.app.ui.component.LocalInlinePlaying
 import com.frontr.app.ui.component.rememberInlineTarget
@@ -158,7 +163,14 @@ fun TimelineScreen(
     // flick or the back to top button brings them back, and the reading area
     // is the whole window.
     val pull = rememberPullToRefreshState()
-    Scaffold { padding ->
+    // In glass, the list is recorded as it scrolls, for the controls that
+    // float over it (the refresh disc, the folder and back to top buttons)
+    // to bend it.
+    val look = LocalGlass.current
+    val listBackdrop = rememberGlassBackdrop()
+    // The page's ground is painted under the whole app, see MainActivity.
+    Scaffold(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) { padding ->
+        CompositionLocalProvider(LocalGlassBackdrop provides listBackdrop.takeIf { look != null }) {
         // The check pill lives outside the when, so it is on screen whether
         // Home is empty, failed or full, and whatever the scroll position.
         Box(Modifier.fillMaxSize()) {
@@ -279,7 +291,7 @@ fun TimelineScreen(
                         top = padding.calculateTopPadding(),
                         bottom = LocalDockPadding.current
                     ),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().then(if (look != null) Modifier.glassSource(listBackdrop, look) else Modifier)
                 ) {
                     item(key = "home-header") {
                         HomeHeader(
@@ -360,6 +372,7 @@ fun TimelineScreen(
             }
         }
         }
+        }
     }
 }
 
@@ -378,10 +391,9 @@ private fun HomeHeader(
     /** Null until the reader has made a folder, see TimelineScreen. */
     onChooseFolder: (() -> Unit)?
 ) {
-    Surface(
+    ZoneSurface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.zone
+        shape = RoundedCornerShape(28.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),

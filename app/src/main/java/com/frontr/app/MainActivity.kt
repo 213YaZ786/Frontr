@@ -1,5 +1,10 @@
 package com.frontr.app
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.MaterialTheme
+import com.frontr.app.ui.glass.rememberGlassLook
+import com.frontr.app.ui.glass.glassGround
+import com.frontr.app.ui.glass.LocalGlass
 import android.content.Intent
 import android.graphics.Color
 import android.widget.Toast
@@ -61,8 +66,14 @@ class MainActivity : ComponentActivity() {
                     squareAvatars = settings.squareAvatars
                 )
             ) {
-                Box(Modifier.fillMaxSize()) {
-                    FrontrApp()
+                // Glass over Material You: the look for this theme, or none
+                // when the reader turned it off, and the page's ground with
+                // its ambient light under everything.
+                val look = rememberGlassLook(MaterialTheme.colorScheme, settings.glass)
+                CompositionLocalProvider(LocalGlass provides look) {
+                    Box(Modifier.fillMaxSize().glassGround(look, MaterialTheme.colorScheme.background)) {
+                        FrontrApp()
+                    }
                 }
             }
         }
