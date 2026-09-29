@@ -1,5 +1,6 @@
 package com.frontr.app.di
 
+import com.frontr.app.data.marks.PostMarks
 import com.frontr.app.core.link.RedirectResolver
 import com.frontr.app.data.reddit.RedditApi
 import com.frontr.app.core.debug.LogExporter
@@ -66,6 +67,7 @@ val appModule = module {
     single { MediaSavingNotice(androidContext(), get(named("appScope"))) }
     single { AutoMediaDownloader(get(), get(), get(), get(), get(), get()) }
     single { AccountStore(androidContext()) }
+    single { PostMarks(androidContext()) }
     single { LinkRouter() }
     single { FeedRepository(get()) }
     single {
