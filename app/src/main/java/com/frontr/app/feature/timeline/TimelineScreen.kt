@@ -1,5 +1,10 @@
 package com.frontr.app.feature.timeline
 
+import androidx.compose.foundation.layout.Spacer
+import com.frontr.app.core.common.AppError
+import com.frontr.app.core.common.present
+import com.frontr.app.ui.component.ZoneAlertDialog
+import com.frontr.app.ui.component.QuietButton
 import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.glass.rememberGlassBackdrop
 import com.frontr.app.ui.glass.glassSource
@@ -86,14 +91,13 @@ import org.koin.compose.koinInject
 /**
  * Home: everything you follow in one stream, newest first.
  *
- * Pull down to refresh. A post that arrived since the last visit wears an
- * outline until you have scrolled past it. The status icon turns red when an
- * account fails to load and opens the activity log.
+ * Pull down to refresh. A post that arrived since the last visit wears a
+ * dot until you have scrolled past it. When an
+ * account fails to load, a warning in the title says why.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
-    onOpenLog: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenPost: (Post) -> Unit,
     onOpenSearch: () -> Unit,
@@ -125,6 +129,18 @@ fun TimelineScreen(
         )
     }
 
+
+    var showFailures by remember { mutableStateOf(false) }
+    if (showFailures) {
+        FailureDialog(
+            failed = state.errors.toList(),
+            onRetry = {
+                showFailures = false
+                viewModel.refresh()
+            },
+            onDismiss = { showFailures = false }
+        )
+    }
 
     var choosingFolder by remember { mutableStateOf(false) }
     if (choosingFolder) {
@@ -213,17 +229,16 @@ fun TimelineScreen(
                         HomeHeader(
                             state = state,
                             onOpenSearch = onOpenSearch,
-                            onOpenLog = onOpenLog,
+                            onShowFailures = { showFailures = true },
                             onChooseFolder = chooseFolder
                         )
                     }
                     item(key = "nothing") {
                         EmptyState(
                             title = "Nothing could be loaded",
-                            message = "None of your subreddits could be loaded. Pull down to try " +
-                                "again. The activity log shows what Reddit answered.",
-                            actionLabel = "Activity log",
-                            onAction = onOpenLog,
+                            message = "None of your subreddits could be loaded.",
+                            actionLabel = "Try again",
+                            onAction = { viewModel.refresh() },
                             modifier = Modifier.fillParentMaxHeight(0.8f)
                         )
                     }
@@ -297,7 +312,7 @@ fun TimelineScreen(
                         HomeHeader(
                             state = state,
                             onOpenSearch = onOpenSearch,
-                            onOpenLog = onOpenLog,
+                            onShowFailures = { showFailures = true },
                             onChooseFolder = chooseFolder
                         )
                     }
@@ -387,7 +402,7 @@ fun TimelineScreen(
 private fun HomeHeader(
     state: TimelineUiState,
     onOpenSearch: () -> Unit,
-    onOpenLog: () -> Unit,
+    onShowFailures: () -> Unit,
     /** Null until the reader has made a folder, see TimelineScreen. */
     onChooseFolder: (() -> Unit)?
 ) {
@@ -401,26 +416,23 @@ private fun HomeHeader(
         ) {
             val failing = state.errors.isNotEmpty()
             if (state.followedCount > 0) {
-                BoldIconButton(
-                    onClick = onOpenLog,
-                    modifier = Modifier.size(BUTTON_SIZE),
-                    // A failing source is the one thing here that needs
-                    // noticing, so it fills rather than tints.
-                    colors = if (failing) {
-                        IconButtonDefaults.filledTonalIconButtonColors(
+                // Shown only when an account failed to load, the one thing
+                // here that needs noticing; a blank of the same width keeps
+                // the title centred otherwise.
+                if (failing) {
+                    BoldIconButton(
+                        onClick = onShowFailures,
+                        modifier = Modifier.size(BUTTON_SIZE),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    } else {
-                        IconButtonDefaults.filledTonalIconButtonColors()
-                    },
-                    edge = if (failing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(
-                        FrontrIcons.Pulse,
-                        contentDescription = if (failing) "Some subreddits failed to load" else "Everything loaded",
-                        modifier = Modifier.size(ICON_SIZE)
-                    )
+                        ),
+                        edge = MaterialTheme.colorScheme.error
+                    ) {
+                        Icon(FrontrIcons.Pulse, contentDescription = "What went wrong", modifier = Modifier.size(ICON_SIZE))
+                    }
+                } else {
+                    Spacer(Modifier.size(BUTTON_SIZE))
                 }
             }
 
@@ -551,3 +563,44 @@ private fun EmptyState(
         modifier = modifier.fillMaxSize()
     )
 }
+
+/**
+ * What went wrong, in words, and the one thing that helps: which accounts
+ * could not be updated and why. Their saved posts stay in the stream.
+ */
+@Composable
+private fun FailureDialog(
+    failed: List<Pair<String, AppError>>,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ZoneAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (failed.size == 1) "1 subreddit could not be updated" else "${failed.size} subreddits could not be updated") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                failed.take(FAILURES_SHOWN).forEach { (handle, error) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("r/$handle", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            error.present().explanation,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (failed.size > FAILURES_SHOWN) {
+                    Text(
+                        "and ${failed.size - FAILURES_SHOWN} more",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = { QuietButton(onClick = onRetry) { Text("Try again") } },
+        dismissButton = { QuietButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+private const val FAILURES_SHOWN = 5

@@ -23,7 +23,6 @@ import com.frontr.app.core.common.present
 fun ErrorPanel(
     error: AppError,
     onRetry: () -> Unit,
-    onOpenLog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val presentation = error.present()
@@ -41,8 +40,9 @@ fun ErrorPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             when (presentation.action) {
-                ErrorAction.RETRY -> BoldButton(onClick = onRetry) { Text("Try again") }
-                ErrorAction.OPEN_LOG -> BoldButton(onClick = onOpenLog) { Text("Activity log") }
+                // The activity log is for reporting a problem, kept in
+                // Settings; here the one thing to do is try again.
+                ErrorAction.RETRY, ErrorAction.OPEN_LOG -> BoldButton(onClick = onRetry) { Text("Try again") }
                 ErrorAction.NONE -> Unit
             }
         }

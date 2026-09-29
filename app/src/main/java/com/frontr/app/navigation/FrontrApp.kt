@@ -183,7 +183,6 @@ private fun FrontrNavHost(navController: NavHostController) {
                 CompositionLocalProvider(LocalNavAnimatedScope provides this) {
                 MainTabs(
                     settled = settled,
-                    onOpenLog = { navController.navigate(Routes.DEBUG_LOG) },
                     onOpenDebugLog = { navController.navigate(Routes.DEBUG_LOG) },
                     onOpenSavedMedia = { navController.navigate(Routes.SAVED_MEDIA) },
                     onOpenFolders = { navController.navigate(Routes.FOLDERS) },
@@ -217,7 +216,6 @@ private fun FrontrNavHost(navController: NavHostController) {
                     FeedScreen(
                         handle = entry.arguments?.getString("handle").orEmpty(),
                         onBack = { navController.popBackStack() },
-                        onOpenLog = { navController.navigate(Routes.DEBUG_LOG) },
                         onOpenPost = { post ->
                             navController.navigate(Routes.post(post.id, entry.arguments?.getString("handle").orEmpty()))
                         }
@@ -287,7 +285,6 @@ private fun Post.cacheOwner(): String =
 @Composable
 private fun MainTabs(
     settled: Boolean,
-    onOpenLog: () -> Unit,
     onOpenDebugLog: () -> Unit,
     onOpenSavedMedia: () -> Unit,
     onOpenFolders: () -> Unit,
@@ -397,7 +394,6 @@ private fun MainTabs(
                 ReadableScroll {
                     when (tabs[page]) {
                         TopDestination.TIMELINE -> TimelineScreen(
-                            onOpenLog = onOpenLog,
                             onOpenAccounts = { go(TopDestination.ACCOUNTS.ordinal) },
                             onOpenPost = onOpenPost,
                             onOpenSearch = onOpenSearch

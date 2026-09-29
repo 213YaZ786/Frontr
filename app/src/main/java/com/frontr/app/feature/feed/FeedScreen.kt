@@ -88,7 +88,6 @@ import org.koin.compose.koinInject
 fun FeedScreen(
     handle: String,
     onBack: () -> Unit,
-    onOpenLog: () -> Unit,
     onOpenPost: (Post) -> Unit,
     viewModel: FeedViewModel = koinViewModel()
 ) {
@@ -225,8 +224,7 @@ fun FeedScreen(
                     ErrorPanel(
                         modifier = Modifier.padding(16.dp),
                         error = it,
-                        onRetry = viewModel::refresh,
-                        onOpenLog = onOpenLog
+                        onRetry = viewModel::refresh
                     )
                 }
             }
