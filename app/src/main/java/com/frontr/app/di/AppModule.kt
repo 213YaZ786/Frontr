@@ -10,6 +10,9 @@ import com.frontr.app.core.media.MediaSavingNotice
 import com.frontr.app.core.network.ConnectivityMonitor
 import com.frontr.app.core.network.HostThrottle
 import com.frontr.app.core.network.HttpClientFactory
+import com.frontr.app.core.network.WebCookieJar
+import com.frontr.app.core.network.WebPages
+import android.webkit.WebSettings
 import com.frontr.app.core.link.LinkRouter
 import com.frontr.app.data.accounts.AccountStore
 import com.frontr.app.data.cache.FeedCache
@@ -43,8 +46,15 @@ val appModule = module {
     single { RequestLog() }
     single { LogExporter(androidContext()) }
     single { HostThrottle() }
-    single { HttpClientFactory.create() }
-    single { RedditApi(get(), get(), get()) }
+    // The phone's own web engine: its identity for every request, its cookie
+    // store for Reddit's, and the engine itself for Reddit's browser check.
+    single {
+        val agent = runCatching { WebSettings.getDefaultUserAgent(androidContext()) }
+            .getOrDefault(HttpClientFactory.FALLBACK_USER_AGENT)
+        HttpClientFactory.create(get(), agent, WebCookieJar())
+    }
+    single { WebPages(androidContext(), get()) }
+    single { RedditApi(get(), get(), get(), get<WebPages>()) }
     single { ConnectivityMonitor(androidContext()) }
     // Reddit hands out its videos as MP4 files, saved as they are.
     single { MediaDownloader(androidContext(), get(named("appScope"))) { file -> file } }

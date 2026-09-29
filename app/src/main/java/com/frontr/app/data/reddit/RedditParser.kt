@@ -63,6 +63,38 @@ internal object RedditParser {
             .mapNotNull { it["src"] }
             .firstOrNull { ("more-posts" in it || "/feeds/" in it) && "after=" in it && "right-rail" !in it }
 
+    /**
+     * A short account of a page that gave no posts, for the activity log:
+     * its title, how many post elements and Reddit elements it holds, and the
+     * start of its visible text, which is where a check page or a notice says
+     * what it is. Nothing of the reader is in it.
+     */
+    fun describe(html: String): String {
+        val title = Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(html)
+            ?.groupValues?.get(1)?.let(::decode)?.trim().orEmpty()
+        val posts = Regex("<shreddit-post[\\s>]").findAll(html).count()
+        val reddit = Regex("<(shreddit|faceplate)-").findAll(html).count()
+        val text = decode(
+            html.replace(Regex("(?is)<(script|style|template)\\b.*?</\\1>"), " ")
+                .replace(Regex("<[^>]+>"), " ")
+        ).replace(Regex("\\s+"), " ").trim()
+        return "title \"${title.take(TITLE_LIMIT)}\", $posts post elements, $reddit Reddit elements, " +
+            "text \"${text.take(TEXT_LIMIT)}\""
+    }
+
+    /**
+     * Whether this is the page Reddit sends a browser it wants to check
+     * before showing anything: a form its script fills in and submits.
+     */
+    fun isCheckPage(html: String): Boolean = "name=\"js_challenge\"" in html
+
+    /**
+     * How many different post ids a page of any kind mentions: the new
+     * site, old Reddit, the RSS feed or the JSON listing. Tells a page that
+     * carries posts Frontr does not read yet from one that carries none.
+     */
+    fun postIds(body: String): Int = Regex("t3_[a-z0-9]{4,12}\\b").findAll(body).map { it.value }.distinct().count()
+
     /** A post and its first comments, from the post's own page. */
     fun conversation(html: String): Conversation? {
         val tag = tags(html, "shreddit-post").firstOrNull() ?: return null
@@ -197,9 +229,13 @@ internal object RedditParser {
         return null
     }
 
-    /** Every opening tag with this name, as its decoded attributes. */
+    /**
+     * Every opening tag with this name, as its decoded attributes. Quoted
+     * values may hold a raw >, as a page read back from the web engine can.
+     */
     fun tags(html: String, name: String): List<Map<String, String>> =
-        Regex("<$name(\\s[^>]*)?>", RegexOption.IGNORE_CASE).findAll(html).map { attributes(it.groupValues[1]) }.toList()
+        Regex("<$name((?:\\s+[^\\s=>/]+(?:=(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?)*)\\s*/?>", RegexOption.IGNORE_CASE)
+            .findAll(html).map { attributes(it.groupValues[1]) }.toList()
 
     private fun attributes(raw: String): Map<String, String> =
         ATTRIBUTE.findAll(raw).associate { it.groupValues[1].lowercase() to decode(it.groupValues[2]) }
@@ -232,4 +268,5 @@ internal object RedditParser {
     private val NAMED = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ")
     private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".gif", ".webp")
     private const val TITLE_LIMIT = 80
+    private const val TEXT_LIMIT = 200
 }

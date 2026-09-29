@@ -1,5 +1,8 @@
 package com.frontr.app.feature.debug
 
+import android.os.Build
+import com.frontr.app.BuildConfig
+
 import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.navigation.LocalReadableInset
 import androidx.compose.foundation.layout.Arrangement
@@ -93,7 +96,9 @@ fun DebugLogScreen(onBack: () -> Unit) {
                 BoldButton(onClick = {
                     scope.launch {
                         val name = "frontr-log-${System.currentTimeMillis()}.txt"
-                        exporter.exportText(name, log.render())
+                        val heading = "Frontr ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE}, " +
+                            "language ${java.util.Locale.getDefault().toLanguageTag()}"
+                        exporter.exportText(name, log.render(withPages = true, heading = heading))
                             .onSuccess { snackbar.showSnackbar("Saved to $it") }
                             .onFailure { snackbar.showSnackbar("Could not save the file") }
                     }

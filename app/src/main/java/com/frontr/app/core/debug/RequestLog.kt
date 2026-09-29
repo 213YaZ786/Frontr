@@ -28,10 +28,15 @@ class RequestLog {
         val detail: String? = null
     )
 
-    enum class Kind { PROBE, PROFILE, PAGE, RSS, PARSE, THREAD, LIST, CACHE, MEDIA }
+    enum class Kind { PROBE, PROFILE, PAGE, RSS, PARSE, THREAD, LIST, CACHE, MEDIA, HTTP }
+
+    /** A whole page Reddit sent that Frontr could not read, kept to be looked at. */
+    data class Page(val atMillis: Long, val label: String, val body: String)
 
     private val _entries = MutableStateFlow<List<Entry>>(emptyList())
     val entries: StateFlow<List<Entry>> = _entries.asStateFlow()
+
+    private val _pages = MutableStateFlow<List<Page>>(emptyList())
 
     fun record(entry: Entry) {
         _entries.value = (_entries.value + entry).takeLast(CAPACITY)
@@ -58,15 +63,30 @@ class RequestLog {
         )
     )
 
-    fun clear() {
-        _entries.value = emptyList()
+    /**
+     * Keeps a page Reddit sent that gave no posts, whole up to [PAGE_LIMIT]
+     * characters, so an exported log shows exactly what arrived. Only the
+     * last [PAGE_CAPACITY] are kept.
+     */
+    fun keepPage(label: String, body: String) {
+        _pages.value = (_pages.value + Page(System.currentTimeMillis(), label, body.take(PAGE_LIMIT))).takeLast(PAGE_CAPACITY)
     }
 
-    /** Plain text, newest last, suitable for pasting anywhere. */
-    fun render(): String {
+    fun clear() {
+        _entries.value = emptyList()
+        _pages.value = emptyList()
+    }
+
+    /**
+     * Plain text, newest last, suitable for pasting anywhere. [withPages] adds
+     * the pages kept for diagnosis, too large for the clipboard but right for
+     * a saved file. [heading] goes first, the app and system versions.
+     */
+    fun render(withPages: Boolean = false, heading: String? = null): String {
         val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
         return buildString {
             appendLine("Frontr request log")
+            heading?.let { appendLine(it) }
             appendLine("entries: ${_entries.value.size}")
             appendLine("=".repeat(60))
             _entries.value.forEach { e ->
@@ -78,13 +98,25 @@ class RequestLog {
                     e.bodyBytes?.let { add("$it bytes") }
                 }
                 if (meta.isNotEmpty()) appendLine("  ${meta.joinToString("  ")}")
-                e.detail?.let { appendLine("  $it") }
+                e.detail?.lines()?.forEach { appendLine("  $it") }
                 appendLine()
+            }
+            if (withPages && _pages.value.isNotEmpty()) {
+                appendLine("=".repeat(60))
+                appendLine("Pages kept for diagnosis: ${_pages.value.size}")
+                _pages.value.forEach { page ->
+                    appendLine()
+                    appendLine("----- [${stamp.format(Date(page.atMillis))}] ${page.label}, ${page.body.length} characters -----")
+                    appendLine(page.body)
+                    appendLine("----- end of page -----")
+                }
             }
         }
     }
 
     private companion object {
         const val CAPACITY = 300
+        const val PAGE_CAPACITY = 8
+        const val PAGE_LIMIT = 400_000
     }
 }

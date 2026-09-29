@@ -83,6 +83,33 @@ class RedditParserTest {
         assertNotNull(RedditParser.conversation(POST_PAGE))
     }
 
+    @Test
+    fun `a page without posts is described by its title and first words`() {
+        val page = "<html><head><title>Check &amp; wait</title><script>var x = 1;</script></head>" +
+            "<body><div>Please  wait</div><p>while we check</p></body></html>"
+        assertEquals(
+            "title \"Check & wait\", 0 post elements, 0 Reddit elements, text \"Check & wait Please wait while we check\"",
+            RedditParser.describe(page)
+        )
+    }
+
+    @Test
+    fun `tells Reddit's browser check page from a sub page`() {
+        val check = "<title>Reddit</title><form hidden method=\"GET\" action=\"/r/examples/\">" +
+            "<input type=\"hidden\" name=\"solution\" /><input type=\"hidden\" name=\"js_challenge\" value=\"1\"/></form>"
+        assertTrue(RedditParser.isCheckPage(check))
+        assertTrue(!RedditParser.isCheckPage(LISTING))
+    }
+
+    @Test
+    fun `reads a post whose attributes hold a raw greater than sign`() {
+        val page = "<shreddit-post class=\"[&>*]:block\" is-embeddable=\"\" id=\"t3_fff666\" post-title=\"a > b\" " +
+            "subreddit-name=\"Examples\" post-type=\"text\" permalink=\"/r/Examples/comments/fff666/a/\"></shreddit-post>"
+        val post = RedditParser.posts(page).single()
+        assertEquals("t3_fff666", post.id)
+        assertEquals("a > b", post.text)
+    }
+
     private companion object {
         val LISTING = """
             <shreddit-subreddit-header name="Examples" prefixed-name="r/Examples"></shreddit-subreddit-header>
