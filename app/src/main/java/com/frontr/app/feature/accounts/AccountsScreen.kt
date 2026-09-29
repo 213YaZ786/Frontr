@@ -1,5 +1,6 @@
 package com.frontr.app.feature.accounts
 
+import com.frontr.app.ui.component.rememberHaptics
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
@@ -97,6 +98,7 @@ fun AccountsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val focus = LocalFocusManager.current
     val context = LocalContext.current
+    val haptics = rememberHaptics()
 
 
     // Coming back from a profile may have brought new posts or an avatar.
@@ -137,6 +139,7 @@ fun AccountsScreen(
             .orEmpty()
         val text = PastedText.query(clip) { "reddit.com/" in it || "redd.it/" in it }
         if (text.isEmpty()) {
+            haptics.reject()
             Toast.makeText(context, "Nothing to paste. Copy a subreddit or a post link first.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -220,7 +223,7 @@ fun AccountsScreen(
                     CandidateCard(
                         handle = candidate,
                         onOpen = { open(candidate) },
-                        onFollow = { viewModel.follow(candidate) }
+                        onFollow = { haptics.done(); viewModel.follow(candidate) }
                     )
                 }
             } else if (trimmed.isNotEmpty() && candidate == null && visible.isEmpty()) {

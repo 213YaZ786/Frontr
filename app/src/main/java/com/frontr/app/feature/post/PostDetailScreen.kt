@@ -1,5 +1,6 @@
 package com.frontr.app.feature.post
 
+import com.frontr.app.ui.component.RejectOnFailure
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
@@ -93,6 +94,7 @@ fun PostDetailScreen(
     viewModel: PostDetailViewModel = koinViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    RejectOnFailure((state.thread as? ThreadState.Failed)?.error)
     val context = LocalContext.current
 
     LaunchedEffect(id) { viewModel.load(id, from) }

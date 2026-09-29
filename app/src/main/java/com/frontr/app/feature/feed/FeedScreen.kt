@@ -1,5 +1,7 @@
 package com.frontr.app.feature.feed
 
+import com.frontr.app.ui.component.RejectOnFailure
+import com.frontr.app.ui.component.rememberHaptics
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.plus
 import com.frontr.app.ui.component.BoldButton
@@ -90,6 +92,8 @@ fun FeedScreen(
     viewModel: FeedViewModel = koinViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val haptics = rememberHaptics()
+    RejectOnFailure(state.error)
     val followed by viewModel.followed.collectAsState()
     val isFollowing = followed.any { it.handle.equals(handle, ignoreCase = true) }
     val uriHandler = LocalUriHandler.current
@@ -190,7 +194,12 @@ fun FeedScreen(
                     name = name,
                     feed = feed,
                     isFollowing = isFollowing,
-                    onToggleFollow = viewModel::toggleFollow,
+                    onToggleFollow = {
+                        // Following or dropping an account is a decision, and
+                        // it answers like one.
+                        haptics.done()
+                        viewModel.toggleFollow()
+                    },
                     onOpenAvatar = { small ->
                         viewing = Triple(
                             "",

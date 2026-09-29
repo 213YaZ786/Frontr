@@ -1,5 +1,6 @@
 package com.frontr.app.feature.timeline
 
+import com.frontr.app.ui.component.rememberRefreshHaptics
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.PullIndicator
@@ -59,9 +60,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -96,6 +95,12 @@ fun TimelineScreen(
     viewModel: TimelineViewModel = koinViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    // The threshold is felt in the indicator itself; this answers the end of
+    // a refresh the reader pulled: done, or a refusal when nothing came.
+    val askedRefresh = rememberRefreshHaptics(
+        refreshing = state.loading,
+        failed = state.errors.isNotEmpty() && (state.posts.isEmpty() || state.errors.size >= state.followedCount)
+    )
     val uriHandler = LocalUriHandler.current
     val downloader: MediaDownloader = koinInject()
     val settingsStore: SettingsStore = koinInject()
@@ -115,7 +120,6 @@ fun TimelineScreen(
         )
     }
 
-    val haptics = LocalHapticFeedback.current
 
     var choosingFolder by remember { mutableStateOf(false) }
     if (choosingFolder) {
@@ -172,9 +176,7 @@ fun TimelineScreen(
             state.isEmpty && state.errors.isNotEmpty() -> PullToRefreshBox(
                 isRefreshing = state.loading,
                 onRefresh = {
-                    // Confirms the gesture crossed the threshold, so the
-                    // reader can let go without watching for the spinner.
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    askedRefresh()
                     viewModel.refresh()
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -219,9 +221,7 @@ fun TimelineScreen(
             else -> PullToRefreshBox(
                 isRefreshing = state.loading,
                 onRefresh = {
-                    // Confirms the gesture crossed the threshold, so the
-                    // reader can let go without watching for the spinner.
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    askedRefresh()
                     viewModel.refresh()
                 },
                 modifier = Modifier.fillMaxSize(),

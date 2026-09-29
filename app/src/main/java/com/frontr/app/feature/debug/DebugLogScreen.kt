@@ -1,5 +1,6 @@
 package com.frontr.app.feature.debug
 
+import com.frontr.app.ui.component.rememberHaptics
 import android.os.Build
 import com.frontr.app.BuildConfig
 
@@ -59,6 +60,7 @@ fun DebugLogScreen(onBack: () -> Unit) {
     val entries by log.entries.collectAsState()
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
     val snackbar = remember { SnackbarHostState() }
     val stamp = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
@@ -90,6 +92,7 @@ fun DebugLogScreen(onBack: () -> Unit) {
             ) {
                 BoldButton(onClick = {
                     clipboard.setText(AnnotatedString(log.render()))
+                    haptics.done()
                     scope.launch { snackbar.showSnackbar("Log copied") }
                 }) { Text("Copy all") }
 
