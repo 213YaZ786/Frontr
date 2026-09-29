@@ -1,7 +1,6 @@
 package com.frontr.app.ui.component
 
 import com.frontr.app.ui.theme.innerZone
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,15 +68,12 @@ fun PostCard(
     // two things without needing a line drawn between them.
     val shape = RoundedCornerShape(24.dp)
     val tap = rememberHaptics()
+    Box(modifier) {
     ZoneSurface(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = if (compact) 3.dp else 5.dp),
-        shape = shape,
-        // The outline says "you have not been past this one yet" and nothing
-        // else. It needs no label and no legend, which is why it is a border
-        // and not a badge.
-        border = if (unread) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        shape = shape
     ) {
         Column(
             Modifier.clickable { tap.tick(); onClick() }
@@ -128,6 +124,9 @@ fun PostCard(
                 }
             }
         }
+    }
+    // Arrived since the last visit and not yet scrolled past, see NewDot.
+    NewDot(unread, Modifier.align(Alignment.TopEnd).padding(top = if (compact) 11.dp else 13.dp, end = 26.dp))
     }
 }
 
