@@ -241,7 +241,7 @@ internal object RedditParser {
                 title = href.substringAfter("://").removePrefix("www.").take(TITLE_LIMIT),
                 description = null,
                 destination = domain?.removePrefix("www."),
-                imageUrl = a["thumbnail-url"]?.takeIf { it.startsWith("https://") },
+                imageUrl = a["thumbnail-url"]?.takeIf { it.startsWith("https://") } ?: thumbnail(html, id),
                 url = href
             )
         } else {
@@ -277,6 +277,19 @@ internal object RedditParser {
             permalink = "https://$HOST$permalink",
             stats = PostStats(likes = a["score"]?.toIntOrNull())
         )
+    }
+
+    /**
+     * A link post's picture: Reddit no longer names it on
+     * the post element but draws it as an image inside it, a small preview
+     * of the article's own picture. Reddit signs it at that size, a larger
+     * one is refused.
+     */
+    private fun thumbnail(html: String, id: String): String? {
+        val at = html.indexOf("id=\"$id\"").takeIf { it >= 0 } ?: return null
+        val end = html.indexOf("</shreddit-post>", at).takeIf { it > 0 } ?: html.length
+        return Regex("""<img\b[^>]*\bsrc="(https://(?:external-preview\.redd\.it|preview\.redd\.it|b\.thumbs\.redditmedia\.com)/[^"]+)"""")
+            .find(html.substring(at, end))?.groupValues?.get(1)?.let(::decode)
     }
 
     /**

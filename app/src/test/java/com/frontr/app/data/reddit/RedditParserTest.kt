@@ -36,6 +36,7 @@ class RedditParserTest {
         val card = posts[0].card!!
         assertEquals("example.org", card.destination)
         assertEquals("https://example.org/article", card.url)
+        assertEquals("https://external-preview.redd.it/article.jpeg?width=140&height=78&auto=webp&s=abc", card.imageUrl)
         assertTrue(posts[0].media.isEmpty())
 
         val image = posts[1].media.single()
@@ -180,6 +181,8 @@ class RedditParserTest {
               comment-count="65" created-timestamp="2026-09-28T20:15:33.123000+0000" domain="example.org" id="t3_aaa111"
               post-title="A title with an &amp; and a quote&#39;s mark" post-type="link" score="327"
               subreddit-prefixed-name="r/Examples" author="someone" subreddit-name="Examples">
+              <img src="https://styles.redditmedia.com/t5_1/styles/profileIcon.png" alt="u/someone avatar">
+              <img src="https://external-preview.redd.it/article.jpeg?width=140&amp;height=78&amp;auto=webp&amp;s=abc" alt="r/Examples - A title">
             </shreddit-post>
             <shreddit-post permalink="/r/Examples/comments/bbb222/a_picture/" content-href="https://i.redd.it/picture.jpeg"
               comment-count="3" created-timestamp="2026-09-28T13:45:00.198000+0000" domain="i.redd.it" id="t3_bbb222"

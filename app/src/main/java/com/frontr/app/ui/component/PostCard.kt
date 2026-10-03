@@ -391,6 +391,37 @@ internal fun LinkCardBlock(card: LinkCard, onClick: () -> Unit) {
         color = MaterialTheme.colorScheme.innerZone,
         modifier = Modifier.fillMaxWidth()
     ) {
+        // Reddit's own preview of an article is small: drawn at its size
+        // beside the text it stays sharp, stretched across the card it blurs.
+        if (image != null && isSmallPreview(image)) {
+            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(width = 112.dp, height = 63.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (waiting) {
+                        Icon(
+                            FrontrIcons.Download,
+                            contentDescription = "Load the preview image",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp).clickable { revealed = true }
+                        )
+                    } else {
+                        AsyncImage(
+                            model = image,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
+                }
+                LinkCardText(card, Modifier.weight(1f).padding(start = 12.dp))
+            }
+            return@Surface
+        }
         Column {
             if (image != null) {
                 val ratio = if (LocalDisplayPrefs.current.compact) 2.4f else 1.91f
@@ -415,6 +446,13 @@ internal fun LinkCardBlock(card: LinkCard, onClick: () -> Unit) {
             LinkCardText(card, Modifier.padding(12.dp))
         }
     }
+}
+
+/** A preview Reddit made at thumbnail size, which a larger size would only blur. */
+private fun isSmallPreview(url: String): Boolean {
+    if (url.startsWith("https://b.thumbs.redditmedia.com/")) return true
+    val width = Regex("[?&]width=(\\d+)").find(url)?.groupValues?.get(1)?.toIntOrNull() ?: return false
+    return width <= 320
 }
 
 @Composable
