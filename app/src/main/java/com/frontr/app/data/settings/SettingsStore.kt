@@ -30,7 +30,7 @@ enum class AutoDownload { OFF, UNMETERED, ANY }
 @Serializable
 data class Settings(
     /** What happens when a newer version is out, checked once when the app opens. */
-    val updates: UpdateMode = UpdateMode.NOTIFY,
+    val updates: UpdateMode = UpdateMode.INSTALL,
     /** Poll followed accounts in the background so history accumulates. */
     val backgroundSync: Boolean = false,
     val syncIntervalMinutes: Int = 60,
@@ -85,7 +85,13 @@ data class Settings(
      */
     val welcomeSeen: Boolean = false,
     /** The folder Home shows, or null for every account. */
-    val homeFolder: String? = null
+    val homeFolder: String? = null,
+    /**
+     * Where Home's folder button was put, as fractions of the room it can
+     * move in, or -1 until it is moved (then it sits above the dock).
+     */
+    val folderButtonX: Float = -1f,
+    val folderButtonY: Float = -1f
 )
 
 /**
