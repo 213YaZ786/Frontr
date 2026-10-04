@@ -1,5 +1,6 @@
 package com.frontr.app.data.accounts
 
+import com.frontr.app.core.model.FeedSort
 import com.frontr.app.core.model.FollowedAccount
 import com.frontr.app.core.model.FollowedAccount.Companion.MAIN
 import org.junit.Assert.assertEquals
@@ -29,6 +30,21 @@ class SubscriptionCodecTest {
         )
         assertTrue("\"name\":\"Empty\"" in file)
         assertTrue("\"name\":\"Main\"" !in file)
+    }
+
+    @Test
+    fun `order and country survive an export and an import`() {
+        val accounts = listOf(
+            FollowedAccount("worldnews", sort = FeedSort.TOP_WEEK),
+            FollowedAccount("popular", sort = FeedSort.HOT, country = "fr")
+        )
+        assertEquals(
+            listOf(
+                SubscriptionCodec.Entry("worldnews", sort = FeedSort.TOP_WEEK),
+                SubscriptionCodec.Entry("popular", sort = FeedSort.HOT, country = "fr")
+            ),
+            SubscriptionCodec.import(SubscriptionCodec.export(accounts, listOf(MAIN), nowMillis = 0))
+        )
     }
 
     @Test

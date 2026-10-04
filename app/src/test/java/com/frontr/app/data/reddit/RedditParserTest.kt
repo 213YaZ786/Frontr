@@ -95,6 +95,15 @@ class RedditParserTest {
     }
 
     @Test
+    fun `Popular keeps its own name and continues in its country`() {
+        assertEquals("r/popular", RedditParser.feed(LISTING, "popular", nowMillis = 1_000).displayName)
+        assertEquals(
+            "/svc/shreddit/feeds/popular-feed?after=dDNf&cursor=dDNf&sort=TOP&t=DAY&geo_filter=FR",
+            RedditParser.nextPage("<faceplate-partial src=\"/svc/shreddit/feeds/popular-feed?after=dDNf&amp;cursor=dDNf&amp;sort=TOP&amp;t=DAY&amp;geo_filter=FR\"></faceplate-partial>")
+        )
+    }
+
+    @Test
     fun `reads a post page with its text and its whole comment tree`() {
         val conversation = RedditParser.conversation(POST_PAGE)!!
         val main = conversation.main!!

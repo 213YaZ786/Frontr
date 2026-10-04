@@ -15,7 +15,11 @@ data class FollowedAccount(
      * [com.frontr.app.data.accounts.AccountStore].
      */
     val folder: String = MAIN,
-    val addedAtMillis: Long = 0L
+    val addedAtMillis: Long = 0L,
+    /** Which of its posts Reddit sends, see [FeedSort]. */
+    val sort: FeedSort = FeedSort.BEST,
+    /** Popular only: Reddit's country code, or null for the phone's country. */
+    val country: String? = null
 ) {
     companion object {
         /** Where an account goes when it has been put nowhere. Cannot be renamed or deleted. */

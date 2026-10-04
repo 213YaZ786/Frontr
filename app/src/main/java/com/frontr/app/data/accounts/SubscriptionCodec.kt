@@ -1,6 +1,7 @@
 package com.frontr.app.data.accounts
 
 import com.frontr.app.core.link.RedditLink
+import com.frontr.app.core.model.FeedSort
 import com.frontr.app.core.model.FollowedAccount
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -35,8 +36,13 @@ import java.util.UUID
  */
 object SubscriptionCodec {
 
-    /** One account read from a file, and the folder it was in, when the file says. */
-    data class Entry(val handle: String, val folder: String? = null)
+    /** One account read from a file, and its folder, order and country, when the file says. */
+    data class Entry(
+        val handle: String,
+        val folder: String? = null,
+        val sort: FeedSort? = null,
+        val country: String? = null
+    )
 
     private val json = Json { ignoreUnknownKeys = true }
     private val DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC)
@@ -62,6 +68,9 @@ object SubscriptionCodec {
                                 put("verified", 0)
                                 put("in_feed", 1)
                                 put("created_at", DATE.format(Instant.ofEpochMilli(account.addedAtMillis.coerceAtLeast(0))))
+                                // Frontr's own, which the other apps skip.
+                                if (account.sort != FeedSort.BEST) put("sort", account.sort.name.lowercase())
+                                account.country?.let { put("geo_filter", it) }
                             }
                         )
                     }
@@ -146,7 +155,14 @@ object SubscriptionCodec {
             when (element) {
                 is JsonObject -> {
                     val handle = element.text("screen_name") ?: element.text("screenName") ?: element.text("handle")
-                    handle?.let { Entry(it, folderOfProfile[element.text("id") ?: it]) }
+                    handle?.let {
+                        Entry(
+                            handle = it,
+                            folder = folderOfProfile[element.text("id") ?: it],
+                            sort = FeedSort.of(element.text("sort")),
+                            country = element.text("geo_filter")?.lowercase()
+                        )
+                    }
                 }
                 is JsonPrimitive -> element.contentOrNull?.let { Entry(it) }
                 else -> null

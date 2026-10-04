@@ -2,6 +2,7 @@ package com.frontr.app.data.accounts
 
 import android.content.Context
 import com.frontr.app.core.common.writeTextAtomically
+import com.frontr.app.core.model.FeedSort
 import com.frontr.app.core.model.FollowedAccount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,13 +60,15 @@ class AccountStore(context: Context) {
 
     /** Returns false when the handle is invalid or already followed. */
     @Synchronized
-    fun add(rawHandle: String): Boolean {
+    fun add(rawHandle: String, sort: FeedSort = FeedSort.BEST, country: String? = null): Boolean {
         val handle = FollowedAccount.normalise(rawHandle) ?: return false
         if (_accounts.value.any { it.handle.equals(handle, ignoreCase = true) }) return false
         persist(
             _accounts.value + FollowedAccount(
                 handle = handle,
-                addedAtMillis = System.currentTimeMillis()
+                addedAtMillis = System.currentTimeMillis(),
+                sort = sort,
+                country = country
             )
         )
         return true
@@ -99,7 +102,13 @@ class AccountStore(context: Context) {
             val known = byHandle[key]
             when {
                 known == null -> {
-                    byHandle[key] = FollowedAccount(handle = handle, folder = folderOf(entry), addedAtMillis = now)
+                    byHandle[key] = FollowedAccount(
+                        handle = handle,
+                        folder = folderOf(entry),
+                        addedAtMillis = now,
+                        sort = entry.sort ?: FeedSort.BEST,
+                        country = entry.country
+                    )
                     added++
                 }
                 known.folder == FollowedAccount.MAIN && entry.folder != null ->
@@ -128,6 +137,21 @@ class AccountStore(context: Context) {
                 if (it.handle.equals(handle, ignoreCase = true)) it.copy(displayName = displayName) else it
             }
         )
+    }
+
+    /** Which of the account's posts Reddit sends from now on. */
+    @Synchronized
+    fun setSort(handle: String, sort: FeedSort) = change(handle) { it.copy(sort = sort) }
+
+    /** Popular's country, null for the phone's. */
+    @Synchronized
+    fun setCountry(handle: String, country: String?) = change(handle) { it.copy(country = country) }
+
+    private fun change(handle: String, edit: (FollowedAccount) -> FollowedAccount) {
+        val current = _accounts.value.firstOrNull { it.handle.equals(handle, ignoreCase = true) } ?: return
+        val changed = edit(current)
+        if (changed == current) return
+        persist(_accounts.value.map { if (it === current) changed else it })
     }
 
     /**

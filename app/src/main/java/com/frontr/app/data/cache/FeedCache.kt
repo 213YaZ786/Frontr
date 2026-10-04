@@ -6,6 +6,9 @@ import com.frontr.app.core.debug.RequestLog
 import com.frontr.app.core.model.Feed
 import com.frontr.app.core.model.Post
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -46,6 +49,10 @@ class FeedCache(
      */
     private val scrolledBack = ConcurrentHashMap<String, List<Post>>()
 
+    /** The handle of each feed written, so a list of subs shows what just came in. */
+    private val _written = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val written: SharedFlow<String> = _written.asSharedFlow()
+
     suspend fun read(handle: String): Feed? = withContext(Dispatchers.IO) {
         val file = fileFor(handle)
         if (!file.exists()) return@withContext null
@@ -63,6 +70,7 @@ class FeedCache(
         runCatching {
             fileFor(feed.handle).writeTextAtomically(json.encodeToString(kept))
         }
+        _written.tryEmit(feed.handle.lowercase())
         Unit
     }
 
@@ -221,6 +229,18 @@ class FeedCache(
             .distinctBy { it.id }
             .sortedByDescending { it.publishedAtMillis }
             .toList()
+    }
+
+    /**
+     * Drops a sub's posts and where its paging stood, and keeps what names
+     * it (icon, banner, description): its posts are about to come again in
+     * another order.
+     */
+    suspend fun restart(handle: String) = withContext(Dispatchers.IO) {
+        val feed = read(handle) ?: return@withContext
+        scrolledBack.remove(handle.lowercase())
+        runCatching { fileFor(handle).writeTextAtomically(json.encodeToString(feed.copy(posts = emptyList(), nextCursor = null))) }
+        Unit
     }
 
     suspend fun forget(handle: String) = withContext(Dispatchers.IO) {

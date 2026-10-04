@@ -7,6 +7,8 @@ Read public Reddit communities on Android, with no account, no tracking and no a
 - **Follow subreddits** without a Reddit account. Your list stays on your phone.
 - **Add a subreddit** by typing its name, with or without r/, or by pasting a reddit.com link, even one copied from a Google search.
 - **Read everything in one place.** Home is your own front page: the newest posts of every subreddit you follow, and it goes back as far as you scroll. Pull down to refresh.
+- **Choose which posts each subreddit brings**: Best, Hot, New, Rising or Top (today to all time), when you follow it and on its card in Subreddits.
+- **Follow Popular** (type popular) for what is popular in your country, or another one, or everywhere.
 - **Sort subreddits into folders** and switch Home between them with the folder button.
 - **Open a post** to read it with its first comments, copy its text, share it or open it on Reddit.
 - **View pictures and videos** full screen, zoom in, and save them to your phone.

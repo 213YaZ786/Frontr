@@ -51,9 +51,12 @@ class RedditApi(
     private val passing = Mutex()
     private val passedAt = AtomicLong(0)
 
-    /** A sub's newest page, or the page [cursor] points at further back. */
-    suspend fun feed(sub: String, cursor: String? = null): Outcome<Feed> {
-        val url = cursor?.let { "https://${RedditParser.HOST}$it" } ?: RedditLink.subUrl(sub)
+    /**
+     * A sub's newest page, at [address] (its order, see FeedAddress), or the
+     * page [cursor] points at further back.
+     */
+    suspend fun feed(sub: String, cursor: String? = null, address: String? = null): Outcome<Feed> {
+        val url = cursor?.let { "https://${RedditParser.HOST}$it" } ?: address ?: RedditLink.subUrl(sub)
         val kind = if (cursor == null) RequestLog.Kind.PROFILE else RequestLog.Kind.PAGE
         return when (val read = get(url, kind, sub)) {
             is Outcome.Success -> {

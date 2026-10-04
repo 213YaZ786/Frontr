@@ -43,7 +43,9 @@ internal object RedditParser {
         val icon = subIcon(html)
         // Every post of a sub's page is the sub's, so each wears its icon.
         val posts = posts(html).map { if (icon != null && it.avatarUrl == null) it.copy(avatarUrl = icon) else it }
-        val display = posts.firstOrNull()?.authorName
+        // Popular gathers many subs: its first post's sub is not its name.
+        val display = (if (name.lowercase() in GATHERING) "r/${name.lowercase()}" else null)
+            ?: posts.firstOrNull()?.authorName
             ?: header?.get("prefixed-name")
             ?: "r/$name"
         return Feed(
@@ -384,6 +386,9 @@ internal object RedditParser {
         .optionalStart().appendOffset("+HHMM", "+0000").optionalEnd()
         .optionalStart().appendOffset("+HH:MM", "Z").optionalEnd()
         .toFormatter()
+
+    /** Reddit's feeds that gather the posts of many subs. */
+    private val GATHERING = setOf("popular", "all")
 
     /** A url(...) in a style, with the property it is set on, if any. */
     private val BANNER_URL = Regex("""(?:(--[a-z-]+)\s*:\s*)?url\(([^)]+)\)""")

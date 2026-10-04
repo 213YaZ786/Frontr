@@ -74,6 +74,9 @@ class TimelineViewModel(
      */
     private var filed: Map<String, String> = emptyMap()
 
+    /** Each followed handle's order and country, so a change refetches that sub. Under [work]. */
+    private var asked: Map<String, String> = emptyMap()
+
     /**
      * True once a pass over every followed account, whatever its folder, has
      * finished in this run. From then on switching folders is a repaint from
@@ -88,6 +91,7 @@ class TimelineViewModel(
             work.withLock {
                 known = followedKeys()
                 filed = filedIn()
+                asked = askedOf()
                 val cached = repository.cached(folder)
                 _state.value = _state.value.copy(
                     posts = cached.posts,
@@ -195,9 +199,13 @@ class TimelineViewModel(
         val added = current - known
         val removed = known - current
         val placed = filedIn()
-        if (added.isEmpty() && removed.isEmpty() && placed == filed) return@withLock
+        val orders = askedOf()
+        // A new order or country: its old posts were dropped, its new ones fetched.
+        val reordered = orders.filter { (handle, order) -> asked[handle]?.let { it != order } == true }.keys
+        if (added.isEmpty() && removed.isEmpty() && placed == filed && reordered.isEmpty()) return@withLock
         known = current
         filed = placed
+        asked = orders
 
         val cached = repository.cached(folder)
         _state.value = _state.value.copy(
@@ -208,7 +216,7 @@ class TimelineViewModel(
             lastUpdatedMillis = if (current.isEmpty()) null else _state.value.lastUpdatedMillis
         )
 
-        if (added.isNotEmpty()) fetch(only = added)
+        if (added.isNotEmpty() || reordered.isNotEmpty()) fetch(only = added + reordered)
     }
 
     /**
@@ -284,6 +292,9 @@ class TimelineViewModel(
 
     private fun filedIn(): Map<String, String> =
         accounts.accounts.value.associate { it.handle.lowercase() to it.folder }
+
+    private fun askedOf(): Map<String, String> =
+        accounts.accounts.value.associate { it.handle.lowercase() to "${it.sort}|${it.country}" }
 
     /** The errors of the accounts in [folder], all of them for null. */
     private fun errorsIn(errors: Map<String, AppError>, folder: String?): Map<String, AppError> {

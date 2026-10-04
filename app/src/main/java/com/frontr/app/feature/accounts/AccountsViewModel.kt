@@ -7,6 +7,7 @@ import kotlinx.coroutines.Job
 import com.frontr.app.core.common.Outcome
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.frontr.app.core.model.FeedSort
 import com.frontr.app.core.model.FollowedAccount
 import com.frontr.app.data.accounts.AccountStore
 import com.frontr.app.data.cache.FeedCache
@@ -26,7 +27,10 @@ data class AccountRow(
     val name: String?,
     val avatarUrl: String?,
     val lastPostMillis: Long?,
-    val folder: String = FollowedAccount.MAIN
+    val folder: String = FollowedAccount.MAIN,
+    val sort: FeedSort = FeedSort.BEST,
+    /** Popular only: the country chosen, null for the phone's. */
+    val country: String? = null
 )
 
 /**
@@ -53,13 +57,17 @@ class AccountsViewModel(
                 name = summary?.name ?: account.displayName,
                 avatarUrl = summary?.avatarUrl,
                 lastPostMillis = summary?.lastPostMillis,
-                folder = account.folder
+                folder = account.folder,
+                sort = account.sort,
+                country = account.country
             )
         }.sortedBy { (it.name ?: it.handle).lowercase() }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
         store.accounts.onEach { refresh() }.launchIn(viewModelScope)
+        // A sub fetched again, after a new order for instance, shows its newest post.
+        cache.written.onEach { refresh() }.launchIn(viewModelScope)
     }
 
     /** Re-reads avatars and last post dates. Cheap: local files only, no network. */
@@ -81,8 +89,28 @@ class AccountsViewModel(
     fun isFollowed(handle: String): Boolean =
         store.accounts.value.any { it.handle.equals(handle, ignoreCase = true) }
 
-    fun follow(handle: String) {
-        store.add(handle)
+    fun follow(handle: String, sort: FeedSort, country: String?) {
+        store.add(handle, sort, country)
+    }
+
+    /**
+     * The posts stored in the old order go, so the sub shows the new one,
+     * not a mix; Home fetches it again as soon as the order is saved.
+     */
+    fun setSort(handle: String, sort: FeedSort) {
+        viewModelScope.launch {
+            if (store.accounts.value.firstOrNull { it.handle.equals(handle, ignoreCase = true) }?.sort == sort) return@launch
+            cache.restart(handle)
+            store.setSort(handle, sort)
+        }
+    }
+
+    /** Popular's country, null for the phone's; its posts change as an order would. */
+    fun setCountry(handle: String, country: String?) {
+        viewModelScope.launch {
+            cache.restart(handle)
+            store.setCountry(handle, country)
+        }
     }
 
     /** Every folder, Main first. */

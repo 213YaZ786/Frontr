@@ -21,6 +21,7 @@ import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.FolderDialog
 import androidx.compose.runtime.remember
+import com.frontr.app.core.model.FeedSort
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.AssistChip
@@ -82,6 +83,24 @@ fun AccountsScreen(
     val rows by viewModel.rows.collectAsState()
     val folders by viewModel.folders.collectAsState()
     var filing by remember { mutableStateOf<AccountRow?>(null) }
+    var sorting by remember { mutableStateOf<AccountRow?>(null) }
+    var placing by remember { mutableStateOf<AccountRow?>(null) }
+
+    sorting?.let { row ->
+        SortDialog(
+            handle = row.handle,
+            selected = row.sort,
+            onSelect = { if (it != row.sort) viewModel.setSort(row.handle, it) },
+            onDismiss = { sorting = null }
+        )
+    }
+    placing?.let { row ->
+        CountryDialog(
+            selected = row.country,
+            onSelect = { if (it != row.country) viewModel.setCountry(row.handle, it) },
+            onDismiss = { placing = null }
+        )
+    }
 
     filing?.let { row ->
         FolderDialog(
@@ -238,10 +257,31 @@ fun AccountsScreen(
             }
             if (candidate != null && !alreadyFollowed) {
                 item(key = "candidate") {
+                    // Chosen before following, so the first fetch is already
+                    // in the right order; changed later on the sub's pill.
+                    var sort by rememberSaveable(candidate) { mutableStateOf(FeedSort.BEST) }
+                    var country by rememberSaveable(candidate) { mutableStateOf<String?>(null) }
+                    var choosingSort by remember(candidate) { mutableStateOf(false) }
+                    var choosingCountry by remember(candidate) { mutableStateOf(false) }
+                    if (choosingSort) {
+                        SortDialog(candidate, sort, onSelect = { sort = it }, onDismiss = { choosingSort = false })
+                    }
+                    if (choosingCountry) {
+                        CountryDialog(country, onSelect = { country = it }, onDismiss = { choosingCountry = false })
+                    }
                     CandidateCard(
                         handle = candidate,
                         onOpen = { open(candidate) },
-                        onFollow = { haptics.done(); viewModel.follow(candidate) }
+                        onFollow = { haptics.done(); viewModel.follow(candidate, sort, country) },
+                        choices = {
+                            FeedChoiceChips(
+                                handle = candidate,
+                                sort = sort,
+                                country = country,
+                                onSort = { choosingSort = true },
+                                onCountry = { choosingCountry = true }
+                            )
+                        }
                     )
                 }
             } else if (trimmed.isNotEmpty() && candidate == null && visible.isEmpty()) {
@@ -254,6 +294,8 @@ fun AccountsScreen(
                 AccountCard(
                     row = row,
                     onClick = { open(row.handle) },
+                    onSort = { sorting = row },
+                    onCountry = { placing = row },
                     // Only once the reader has made a folder. With Main alone
                     // the chip would name the one place everything is.
                     onFile = if (folders.size > 1) ({ filing = row }) else null
@@ -268,7 +310,13 @@ fun AccountsScreen(
 }
 
 @Composable
-private fun AccountCard(row: AccountRow, onClick: () -> Unit, onFile: (() -> Unit)?) {
+private fun AccountCard(
+    row: AccountRow,
+    onClick: () -> Unit,
+    onSort: () -> Unit,
+    onCountry: () -> Unit,
+    onFile: (() -> Unit)?
+) {
     ZoneSurface(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
@@ -281,36 +329,43 @@ private fun AccountCard(row: AccountRow, onClick: () -> Unit, onFile: (() -> Uni
         ) {
             Avatar(url = row.avatarUrl, name = row.name ?: row.handle, size = 44.dp)
             Column(Modifier.weight(1f)) {
-                Text(
-                    row.name ?: "r/${row.handle}",
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    row.lastPostMillis?.let(::relativeTime) ?: "Not read yet",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // The folder is a control, not a label: tapping the card opens
-                // the account, tapping this files it.
-                if (onFile != null) {
-                    AssistChip(
-                        onClick = onFile,
-                        label = { Text(row.folder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = { Icon(FrontrIcons.Folder, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                        modifier = Modifier.widthIn(max = 140.dp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        row.name ?: "r/${row.handle}",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                    )
+                    Text(
+                        row.lastPostMillis?.let(::relativeTime) ?: "Not read yet",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Controls, not labels: tapping the card opens the sub,
+                // tapping a chip sets its order, country or folder.
+                FeedChoiceChips(
+                    handle = row.handle,
+                    sort = row.sort,
+                    country = row.country,
+                    onSort = onSort,
+                    onCountry = onCountry,
+                    folder = row.folder,
+                    onFile = onFile
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CandidateCard(handle: String, onOpen: () -> Unit, onFollow: () -> Unit) {
+private fun CandidateCard(
+    handle: String,
+    onOpen: () -> Unit,
+    onFollow: () -> Unit,
+    choices: @Composable () -> Unit
+) {
     ZoneSurface(
         onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
@@ -333,10 +388,11 @@ private fun CandidateCard(handle: String, onOpen: () -> Unit, onFollow: () -> Un
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "Tap to read the profile",
+                    "Tap to read it, or choose its order and follow",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
+                choices()
             }
             BoldButton(onClick = onFollow, filled = true) { Text("Follow") }
         }

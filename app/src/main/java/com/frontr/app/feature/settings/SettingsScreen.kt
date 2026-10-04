@@ -4,6 +4,7 @@ import com.frontr.app.core.update.UpdateMode
 import com.frontr.app.core.update.Updates
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.frontr.app.ui.component.QuietButton
+import com.frontr.app.ui.component.ChoiceDialog
 import com.frontr.app.ui.component.ZoneAlertDialog
 import com.frontr.app.ui.component.ZoneSurface
 import com.frontr.app.ui.component.rememberHaptics
@@ -586,43 +587,6 @@ private fun SwitchRow(
         quiet = true,
         onClick = { change(!checked) },
         trailing = { Switch(checked = checked, onCheckedChange = change, enabled = enabled) }
-    )
-}
-
-@Composable
-private fun <T> ChoiceDialog(
-    title: String,
-    options: List<Pair<T, String>>,
-    selected: T,
-    onSelect: (T) -> Unit,
-    onDismiss: () -> Unit
-) {
-    ZoneAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                options.forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                onSelect(value)
-                                onDismiss()
-                            }
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = value == selected, onClick = null)
-                        Text(label, modifier = Modifier.padding(start = 12.dp))
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
     )
 }
 
