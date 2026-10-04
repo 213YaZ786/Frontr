@@ -18,6 +18,8 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.frontr.app.ui.component.rememberMediaPolicy
 import java.util.Locale
+import kotlin.math.max
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -315,13 +317,22 @@ private fun ProfileHeader(
         // The banner is a picture like any other, so Wi-Fi only holds it too.
         val banner = feed?.bannerUrl
         if (banner != null && !hold) {
+            // Reddit draws banners for a desktop's width: a strip wider than
+            // 3:1 (r/worldnews' row of mastheads, 11:1) is shown whole, a
+            // taller one is cropped to 3:1.
+            var ratio by remember(banner) { mutableStateOf(BANNER_RATIO) }
             AsyncImage(
                 model = banner,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                onSuccess = { loaded ->
+                    val image = loaded.result.image
+                    if (image.width > 0 && image.height > 0) ratio = max(BANNER_RATIO, image.width.toFloat() / image.height)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(3f)
+                    .animateContentSize()
+                    .aspectRatio(ratio)
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             )
@@ -420,3 +431,6 @@ private fun sourceLine(feed: Feed): String {
     }
     return "Read via ${feed.fetchedFromHost}$freshness"
 }
+
+/** The banner's shape until its picture says otherwise, and the tallest it gets. */
+private const val BANNER_RATIO = 3f
