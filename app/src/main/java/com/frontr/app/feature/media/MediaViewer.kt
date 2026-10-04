@@ -1,5 +1,6 @@
 package com.frontr.app.feature.media
 
+import com.frontr.app.ui.component.SafePlayer
 import com.frontr.app.ui.component.DarkGround
 import androidx.compose.runtime.CompositionLocalProvider
 import com.frontr.app.ui.glass.rememberGlassBackdrop
@@ -277,7 +278,7 @@ private fun VideoPage(item: MediaItem, url: String, active: Boolean) {
     var muted by remember(url) { mutableStateOf(isGif || policy.startMuted) }
 
     val exo = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
+        SafePlayer.build(context).apply {
             setMediaItem(PlayableItem.fromUri(url))
             if (isGif) repeatMode = Player.REPEAT_MODE_ALL
         }
