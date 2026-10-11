@@ -22,8 +22,8 @@ android {
         applicationId = "com.frontr.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 31
-        versionName = "0.5.15"
+        versionCode = 32
+        versionName = "0.5.16"
     }
 
     signingConfigs {
