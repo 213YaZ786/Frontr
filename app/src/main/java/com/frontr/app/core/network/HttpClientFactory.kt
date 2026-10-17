@@ -30,6 +30,15 @@ object HttpClientFactory {
     const val CONNECT_TIMEOUT_MS = 8_000L
     const val REQUEST_TIMEOUT_MS = 15_000L
 
+    /**
+     * The biggest answer taken, for the network and for a page the web
+     * engine hands back. Reddit cannot be reached from the dev machine, so
+     * no real page was measured here: a post page with its comments is the
+     * largest, a few MB, and 16 MB leaves several times that while stopping
+     * a hostile or broken answer from being read whole into memory.
+     */
+    const val MAX_BODY_BYTES = 16L * 1024 * 1024
+
     fun create(log: RequestLog, userAgent: String, cookies: CookieJar = CookieJar.NO_COOKIES): HttpClient = HttpClient(OkHttp) {
         expectSuccess = false
         followRedirects = true
@@ -43,6 +52,8 @@ object HttpClientFactory {
             addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder().header("User-Agent", userAgent).build())
             }
+            // Ported from Signal-Android's OkHttpUtil size limit, see ResponseLimit.
+            addInterceptor(ResponseLimit(MAX_BODY_BYTES))
             addNetworkInterceptor(HttpTrace(log))
         }
 

@@ -126,8 +126,9 @@ class WebPages(private val context: Context, private val log: RequestLog) : Page
 
     private suspend fun WebView.evaluate(script: String): String? = suspendCancellableCoroutine { done ->
         evaluateJavascript(script) { raw ->
-            // The result comes back as JSON: a quoted string, or null.
-            val value = runCatching { (Json.parseToJsonElement(raw ?: "null") as? JsonPrimitive)?.contentOrNull }.getOrNull()
+            // The result comes back as JSON: a quoted string, or null. A page
+            // past the network's cap is no page either (HttpClientFactory.MAX_BODY_BYTES).
+            val value = if ((raw?.length ?: 0) > HttpClientFactory.MAX_BODY_BYTES) null else runCatching { (Json.parseToJsonElement(raw ?: "null") as? JsonPrimitive)?.contentOrNull }.getOrNull()
             if (done.isActive) done.resume(value)
         }
     }
