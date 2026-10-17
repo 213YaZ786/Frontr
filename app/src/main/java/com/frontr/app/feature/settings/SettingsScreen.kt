@@ -46,11 +46,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.frontr.app.ui.component.GlassSwitch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.frontr.app.ui.component.BoldButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -501,13 +500,13 @@ fun SettingsScreen(
                 Text("Posts saved on this phone will be deleted. They load again the next time you open a subreddit.")
             },
             confirmButton = {
-                TextButton(onClick = {
+                BoldButton(filled = true, onClick = {
                     viewModel.clearSavedPosts()
                     dialog = OpenDialog.NONE
                 }) { Text("Clear") }
             },
             dismissButton = {
-                TextButton(onClick = { dialog = OpenDialog.NONE }) { Text("Cancel") }
+                QuietButton(onClick = { dialog = OpenDialog.NONE }) { Text("Cancel") }
             }
         )
         OpenDialog.NONE -> Unit
@@ -586,7 +585,7 @@ private fun SwitchRow(
         enabled = enabled,
         quiet = true,
         onClick = { change(!checked) },
-        trailing = { Switch(checked = checked, onCheckedChange = change, enabled = enabled) }
+        trailing = { GlassSwitch(checked = checked, onCheckedChange = change, enabled = enabled) }
     )
 }
 
