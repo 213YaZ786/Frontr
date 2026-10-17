@@ -32,4 +32,6 @@ Download the latest APK from [Releases](https://github.com/213YaZ786/Frontr/rele
 
 Open **Settings > Activity log**, tap "Save to Downloads", and attach the file to an issue. It lists what the app asked Reddit and what came back. It contains no personal data beyond the subreddits you opened.
 
+Links are checked before they open, after [URLCheck](https://github.com/TrianguloY/URLCheck) (CC BY 4.0). The tracking rules are [ClearURLs](https://github.com/ClearURLs/Rules) (LGPL-3.0), the site names come from the [Public Suffix List](https://publicsuffix.org) (MPL-2.0).
+
 MIT licensed.
