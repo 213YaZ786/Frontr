@@ -137,7 +137,7 @@ fun TimelineScreen(
             postId = post.id,
             media = post.media,
             startIndex = index,
-            onDownload = { downloader.download(it, post.authorHandle) },
+            onDownload = { downloader.download(it, post.authorHandle, post.permalink) },
             onDismiss = { viewing = null }
         )
     }
@@ -358,7 +358,7 @@ fun TimelineScreen(
                             unread = marksReady && post.id !in readIds,
                             onClick = { onOpenPost(post) },
                             onOpenLink = { uriHandler.openUri(it) },
-                            onDownload = { downloader.download(it, post.authorHandle) },
+                            onDownload = { downloader.download(it, post.authorHandle, post.permalink) },
                             showStats = settings.showCounts,
                             onOpenMedia = { index -> viewing = post to index },
                             // Posts arrive and merge while the list is on

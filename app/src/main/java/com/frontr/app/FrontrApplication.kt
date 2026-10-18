@@ -26,6 +26,8 @@ class FrontrApplication : Application() {
         if (android.os.Process.isIsolated()) return
         // The links kit's catalogs (ClearURLs rules, public suffixes) from the assets, for LinkCleaner and the link sheet.
         com.frontr.app.core.link.ClearUrls.attach(this)
+        // The saves that finished while the app was not running get their post address in the media store.
+        kotlin.concurrent.thread(name = "save-origin") { com.frontr.app.core.media.SaveOrigin.settle(this) }
         // Every picture decoded in the isolated decoder, never in the app.
         SingletonImageLoader.setSafe { context ->
             // The network side first, pictures capped in bytes before the decoder.

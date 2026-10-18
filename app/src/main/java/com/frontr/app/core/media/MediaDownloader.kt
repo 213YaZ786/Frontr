@@ -40,10 +40,13 @@ class MediaDownloader(
      * A video that plays from an HLS playlist, pieces that cannot be saved as
      * one file, is resolved to its file first. Reddit's videos are MP4 files
      * already, so this path stays for playlists only.
+     *
+     * [permalink] is the post the file comes from, kept by the media store as
+     * the file's REFERER_URI, see [SaveOrigin].
      */
-    fun download(item: MediaItem, authorHandle: String) {
+    fun download(item: MediaItem, authorHandle: String, permalink: String?) {
         if (!item.downloadUrl.isPlaylist()) {
-            enqueuePublic(item, authorHandle)
+            enqueuePublic(item, authorHandle, permalink)
             return
         }
         toast("Finding the video file")
@@ -52,12 +55,12 @@ class MediaDownloader(
             if (file == null) {
                 toast("This video's file could not be found")
             } else {
-                enqueuePublic(item.copy(downloadUrl = file), authorHandle)
+                enqueuePublic(item.copy(downloadUrl = file), authorHandle, permalink)
             }
         }
     }
 
-    private fun enqueuePublic(item: MediaItem, authorHandle: String) {
+    private fun enqueuePublic(item: MediaItem, authorHandle: String, permalink: String?) {
         // DownloadManager.Request throws on anything but http and https
         // (AOSP, frameworks/base/core/java/android/app/DownloadManager.java),
         // and the address comes from a post: checked as every link is.
@@ -81,7 +84,12 @@ class MediaDownloader(
             return
         }
         runCatching { manager.enqueue(request) }
-            .onSuccess { toast("Saving to Downloads/$PUBLIC_FOLDER") }
+            // The post's address goes into the file's media store row when the
+            // download is done, see [SaveOrigin].
+            .onSuccess { id ->
+                SaveOrigin.remember(context, id, PostReferer.forPermalink(permalink))
+                toast("Saving to Downloads/$PUBLIC_FOLDER")
+            }
             .onFailure { toast("Could not start the download") }
     }
 
