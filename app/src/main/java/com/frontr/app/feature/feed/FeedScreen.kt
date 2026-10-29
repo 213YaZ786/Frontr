@@ -383,8 +383,9 @@ private fun ProfileHeader(
                 stats.followers?.let { "${compactCount(it)} followers" }
             )
             if (parts.isNotEmpty()) {
+                // Joined with a comma, as AOSP Dialer's CallLogEntryText.java joinSecondaryTextComponents (https://android.googlesource.com/platform/packages/apps/Dialer/+/refs/heads/main/java/com/android/dialer/calllogutils/CallLogEntryText.java).
                 Text(
-                    parts.joinToString(" · "),
+                    parts.joinToString(", "),
                     style = MaterialTheme.typography.labelLarge,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 2.dp)

@@ -326,7 +326,8 @@ internal object RedditParser {
         val text = inner
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
             .replace(Regex("(?i)</(p|li|blockquote|h[1-6]|pre)>"), "\n\n")
-            .replace(Regex("(?i)<li[^>]*>"), "• ")
+            // A list item starts with a hyphen, as Reddit's own markdown writes a list (https://www.reddit.com/wiki/markdown), no bullet.
+            .replace(Regex("(?i)<li[^>]*>"), "- ")
             .replace(Regex("<[^>]+>"), "")
         return decode(text).lines().joinToString("\n") { it.trim() }
             .replace(Regex("\n{3,}"), "\n\n").trim()
