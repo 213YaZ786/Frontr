@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "ground": {"day": "system_accent1_600", "night": "system_accent1_700"},
+  "layers": [
+    {"png": "frontr_far_shadow.png", "sha256": "2889bb952c97b1af28dbddbb6a24e88741a1eec4699176db608ef95d7dea3b8b"},
+    {"png": "frontr_far.png", "sha256": "a58cbcd4ffffc7a505dd2fdce17ebd0d5fe7c467bc61171744a0b41592be7528", "day": "system_accent1_400", "night": "system_accent1_400"},
+    {"png": "frontr_far_shine.png", "sha256": "cdbba750229ddb47a2741b40e1c16c8a95417f121185b2c1a0e9fdee2fa51612"},
+    {"png": "frontr_mid_shadow.png", "sha256": "2fdd75da62405cdcc3a2bdd2ddb282607abd12dc3a9545908829742be7bbf251"},
+    {"png": "frontr_mid.png", "sha256": "7d9811651a3bfc712fb53ce68edb694eb7b5e901e4008b24f1ee627a6ca76c08", "day": "system_accent1_200", "night": "system_accent1_200"},
+    {"png": "frontr_mid_shine.png", "sha256": "2e77490c6238b7bfdfaa381da53fdb430c22b9232d223ec7b3258559025202a2"},
+    {"png": "frontr_near_shadow.png", "sha256": "2e4d398e08e5fd9d16c73da1ae9b4c9519752c8b0347126a53a952652dfb6e86"},
+    {"png": "frontr_near.png", "sha256": "33874bf8de95dd968aaa41a9e4f7340872423beb8e97224f5953f30b94ca9739", "day": "system_accent1_0", "night": "system_accent1_0"},
+    {"png": "frontr_near_shine.png", "sha256": "2aad50e19be1ac24111f3716a9cb9a205fa5c02da93b17e556febbb8cf37f712"}
+  ]
+}
