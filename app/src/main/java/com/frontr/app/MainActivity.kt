@@ -68,8 +68,9 @@ class MainActivity : ComponentActivity() {
             ) {
                 // Glass over Material You: the look for this theme, or none
                 // when the reader turned it off, and the page's ground with
-                // its ambient light under everything.
-                val look = rememberGlassLook(MaterialTheme.colorScheme, settings.glass)
+                // its ambient light under everything. Quiet glass, the user 2026-11-01. Ported from MTGA:
+                // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/MainActivity.kt#MainActivity
+                val look = rememberGlassLook(MaterialTheme.colorScheme, settings.glass, quiet = true)
                 CompositionLocalProvider(LocalGlass provides look) {
                     Box(Modifier.fillMaxSize().glassGround(look, MaterialTheme.colorScheme.background)) {
                         FrontrApp()

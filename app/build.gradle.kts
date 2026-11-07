@@ -1,8 +1,13 @@
+// The roborazzi plugin, testOptions and test dependencies are copied from LinkedOut's app/build.gradle.kts, which has
+// them from Language's
+// https://github.com/213YaZ786/Language/blob/main/app/build.gradle.kts
 plugins {
     // AGP 9 compiles Kotlin itself (built-in Kotlin), so no kotlin-android here.
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    // Screens drawn on the JVM and compared, as SMS's app/build.gradle.kts (roborazzi plugin).
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -22,8 +27,8 @@ android {
         applicationId = "com.frontr.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 43
-        versionName = "0.5.27"
+        versionCode = 44
+        versionName = "0.5.28"
     }
 
     signingConfigs {
@@ -69,6 +74,31 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Screens drawn on the JVM by Robolectric and compared by Roborazzi (its README's setup), copied from Language's
+    // https://github.com/213YaZ786/Language/blob/main/app/build.gradle.kts (testOptions).
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+            all {
+                it.systemProperties["robolectric.pixelCopyRenderMode"] = "hardware"
+                it.maxHeapSize = "4096m"
+                // Robolectric on JDK 17 and later, as its getting started page says.
+                it.jvmArgs(
+                    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                    "--add-opens=java.base/java.util=ALL-UNNAMED",
+                    "--add-opens=java.base/java.io=ALL-UNNAMED",
+                    "--add-opens=java.base/java.net=ALL-UNNAMED",
+                    "--add-opens=java.base/java.security=ALL-UNNAMED",
+                    "--add-opens=java.base/java.text=ALL-UNNAMED",
+                    "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+                    "--add-opens=java.desktop/java.awt.font=ALL-UNNAMED",
+                    "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"
+                )
+            }
+        }
     }
 
     packaging {
@@ -124,4 +154,10 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

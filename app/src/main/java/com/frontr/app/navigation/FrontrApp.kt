@@ -422,13 +422,14 @@ private fun MainTabs(
                         TopDestination.ACCOUNTS -> ReadableScroll {
                             AccountsScreen(onOpenFeed = onOpenFeed, onOpenFolders = onOpenFolders)
                         }
-                        TopDestination.SETTINGS -> ReadableScroll {
-                            SettingsScreen(
-                                onOpenDebugLog = onOpenDebugLog,
-                                onOpenSavedMedia = onOpenSavedMedia,
-                                onOpenWelcome = { showWelcome = true }
-                            )
-                        }
+                        // Inside the pager's ReadableScroll already, as LinkedOutApp
+                        // (https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/navigation/LinkedOutApp.kt#MainTabs):
+                        // the tiles' panes read LocalReadableInset themselves.
+                        TopDestination.SETTINGS -> SettingsScreen(
+                            onOpenDebugLog = onOpenDebugLog,
+                            onOpenSavedMedia = onOpenSavedMedia,
+                            onOpenWelcome = { showWelcome = true }
+                        )
                     }
                 }
                 }

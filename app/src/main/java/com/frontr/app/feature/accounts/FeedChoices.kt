@@ -75,7 +75,7 @@ internal fun SortDialog(handle: String, selected: FeedSort, onSelect: (FeedSort)
         title = "Posts of r/$handle",
         options = FeedSort.entries.map { it to it.label },
         selected = selected,
-        onSelect = onSelect,
+        onPick = onSelect,
         onDismiss = onDismiss
     )
 }
@@ -91,7 +91,7 @@ internal fun CountryDialog(selected: String?, onSelect: (String?) -> Unit, onDis
         options = listOf<Pair<String?, String>>(null to "This phone's country, ${PopularCountry.label(PopularCountry.ofPhone())}") +
             countries.map { it to PopularCountry.label(it) },
         selected = selected,
-        onSelect = onSelect,
+        onPick = onSelect,
         onDismiss = onDismiss
     )
 }

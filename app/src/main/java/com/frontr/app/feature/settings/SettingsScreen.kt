@@ -1,86 +1,128 @@
 package com.frontr.app.feature.settings
 
-import com.frontr.app.core.update.UpdateMode
-import com.frontr.app.core.update.Updates
-import androidx.compose.runtime.saveable.rememberSaveable
-import com.frontr.app.ui.component.QuietButton
-import com.frontr.app.ui.component.ChoiceDialog
-import com.frontr.app.ui.component.ZoneAlertDialog
-import com.frontr.app.ui.component.ZoneSurface
-import com.frontr.app.ui.component.rememberHaptics
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.windowInsetsTopHeight
-import com.frontr.app.core.system.BatteryExemption
-import com.frontr.app.navigation.LocalReadableInset
-import com.frontr.app.ui.component.ScreenBanner
-import com.frontr.app.ui.component.LocalDockPadding
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
-import android.provider.Settings
-import androidx.core.content.ContextCompat
-import com.frontr.app.sync.NewPostNotifier
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.verify.domain.DomainVerificationManager
 import android.content.pm.verify.domain.DomainVerificationUserState
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.text.format.Formatter
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.compose.foundation.clickable
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import com.frontr.app.ui.component.GlassSwitch
 import androidx.compose.material3.Text
-import com.frontr.app.ui.component.BoldButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.frontr.app.BuildConfig
+import com.frontr.app.core.system.BatteryExemption
+import com.frontr.app.core.update.StoreLink
+import com.frontr.app.core.update.UpdateMode
+import com.frontr.app.core.update.Updates
 import com.frontr.app.data.settings.AutoDownload
 import com.frontr.app.data.settings.StartTab
 import com.frontr.app.data.settings.ThemeMode
+import com.frontr.app.feature.welcome.rememberSetupTiles
+import com.frontr.app.navigation.LocalReadableInset
+import com.frontr.app.navigation.WidthClass
+import com.frontr.app.sync.NewPostNotifier
+import com.frontr.app.ui.component.BoldButton
+import com.frontr.app.ui.component.ChoiceDialog
+import com.frontr.app.ui.component.FloatingFrame
+import com.frontr.app.ui.component.FloatingTop
+import com.frontr.app.ui.component.LargeTitle
+import com.frontr.app.ui.component.LocalDockPadding
+import com.frontr.app.ui.component.QuietButton
+import com.frontr.app.ui.component.SettingsActionTile
+import com.frontr.app.ui.component.SettingsFoldedSections
+import com.frontr.app.ui.component.SettingsHeaderSpacer
+import com.frontr.app.ui.component.SettingsListDetail
+import com.frontr.app.ui.component.SettingsSection
+import com.frontr.app.ui.component.SettingsSectionTitle
+import com.frontr.app.ui.component.SettingsSwitchTile
+import com.frontr.app.ui.component.SettingsTile
+import com.frontr.app.ui.component.SettingsTileDialogs
+import com.frontr.app.ui.component.SettingsTileGrid
+import com.frontr.app.ui.component.SideDockClearance
+import com.frontr.app.ui.component.ZoneAlertDialog
+import com.frontr.app.ui.component.leftText
+import com.frontr.app.ui.component.rememberHaptics
+import com.frontr.app.ui.icon.FrontrIcons
 import com.frontr.app.ui.theme.TEXT_SCALES
 import com.frontr.app.ui.theme.textScaleLabel
 import org.koin.androidx.compose.koinViewModel
 
 private enum class OpenDialog { NONE, THEME, TEXT_SIZE, KEEP, FREQUENCY, CLEAR, START_TAB, AUTO_DOWNLOAD, UPDATES }
 
+/**
+ * The groups of settings: one page after another on a phone, a list and the chosen one's page on a wide window.
+ * Ported from MTGA's SECTIONS (LinkedOut's commit 6f8bbce took them from there), with Frontr's own groups: "Your list"
+ * is Subreddits here, and Privacy (LinkedOut's browsing data) has no counterpart.
+ * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/settings/SettingsScreen.kt#SECTIONS
+ */
+private val APPEARANCE = SettingsSection("appearance", "Appearance", SettingsIcons.Palette)
+private val MEDIA = SettingsSection("media", "Media", SettingsIcons.Image)
+private val READING = SettingsSection("reading", "Reading", FrontrIcons.Comment)
+private val BACKGROUND = SettingsSection("background", "Background updates", FrontrIcons.Refresh)
+private val STORAGE = SettingsSection("storage", "Storage", FrontrIcons.Folder)
+private val SUBREDDITS = SettingsSection("list", "Subreddits", FrontrIcons.Person)
+private val SUPPORT = SettingsSection("support", "Support", SettingsIcons.Warning)
+private val ABOUT = SettingsSection("about", "About", FrontrIcons.Info)
+private val SECTIONS = listOf(APPEARANCE, MEDIA, READING, BACKGROUND, STORAGE, SUBREDDITS, SUPPORT, ABOUT)
+// not ported: PRIVACY (LinkedOut's browsing data section: Frontr has no cookie clearing to offer)
+// not ported: SOURCES (MTGA's sources section: Frontr reads reddit.com alone, there is nothing to choose)
+
+/**
+ * A section's tiles: the switches first, then what opens something, as MTGA's page lambda joins them
+ * (https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/settings/SettingsScreen.kt#SettingsScreen).
+ * About alone starts with what opens something, so that Guide stays its first tile as Dialer's About
+ * (https://github.com/213YaZ786/Dialer/blob/main/app/src/main/java/com/yaz/dialer/feature/settings/SettingsScreen.kt#SettingsScreen)
+ * ahead of the update source switch. LinkedOut's commit 6f8bbce names this join sectionTiles.
+ */
+private fun sectionTiles(
+    which: SettingsSection,
+    tiles: Map<SettingsSection, List<SettingsSwitchTile>>,
+    actions: Map<SettingsSection, List<SettingsActionTile>>
+): List<SettingsTile> =
+    if (which == ABOUT) actions[which].orEmpty() + tiles[which].orEmpty()
+    else tiles[which].orEmpty() + actions[which].orEmpty()
 
 private fun updatesLabel(mode: UpdateMode): String = when (mode) {
     UpdateMode.OFF -> "Off"
     UpdateMode.NOTIFY -> "Notify me"
     UpdateMode.INSTALL -> "Install"
 }
+
 private fun autoDownloadLabel(value: AutoDownload): String = when (value) {
     AutoDownload.OFF -> "Never"
     AutoDownload.UNMETERED -> "On Wi-Fi only"
@@ -99,9 +141,25 @@ private fun keepLabel(days: Int): String = when (days) {
 }
 
 /**
- * Settings, grouped by what people come here to change. Every description
- * says what the option does for the reader, in plain words.
+ * Settings as tiles, ported from MTGA's SettingsScreen (itself from SMS's, which follows Android's Quick Settings
+ * tile): https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/settings/SettingsScreen.kt#SettingsScreen
+ * and from LinkedOut's, which took it from there in its commit 6f8bbce
+ * https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/settings/SettingsScreen.kt#SettingsScreen
+ * Sections, switches, actions and the page are laid out as there; Frontr's Settings is a tab of the dock too,
+ * so the header has no back button. The guide tile reads "N left" as Language's does:
+ * https://github.com/213YaZ786/Language/blob/main/app/src/main/java/com/yaz/language/feature/settings/SettingsScreen.kt#SettingsScreen
+ * The "Update by itself" tile is the logic of Launcher's UpdateSourceRow
+ * (https://github.com/213YaZ786/Launcher/blob/main/app/src/main/java/com/yaz/launcher/ui/component/UpdateSourceRow.kt#UpdateSourceRow).
+ * The kit's UpdateSourceRow is a ListItem row, which does not fit a grid of tiles, so its logic is ported into the tile here.
+ * Every setting the former list of rows offered is a tile: appearance, media (Wi-Fi only, saving, playback), start tab,
+ * Reddit links, background checks, notifications, keeping posts, saved posts, saved media, cached images, the
+ * subreddits file, the activity log, updates and the about lines.
  */
+// not ported: UpdateSourceRow (the kit's ListItem row, its logic lives in the "self" tile below)
+// not ported: onOpenConnection and the "connection" tile (Frontr has no connection check screen to reach)
+// not ported: OpenDialog.COOKIES and the "cookies" tile (LinkedOut's browsing data, Frontr keeps no cookies to clear)
+// not ported: the "reads" tile (LinkedOut's one-host line, Frontr's About already says what it reads)
+// not ported: Section, SettingRow, SwitchRow (Frontr's former rows, the tiles replace them)
 @Composable
 fun SettingsScreen(
     onOpenDebugLog: () -> Unit,
@@ -116,14 +174,42 @@ fun SettingsScreen(
     val offlineCount by viewModel.offlineCount.collectAsState()
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val haptics = rememberHaptics()
+    // The guide's tile says how many steps are left, read from the system as the guide reads them.
+    val setup = rememberSetupTiles()
 
     // Changed in system settings, so read again each time the screen returns.
-    var xLinksOn by remember { mutableStateOf(xLinksEnabled(context)) }
+    var redditLinksOn by remember { mutableStateOf(redditLinksEnabled(context)) }
     LifecycleResumeEffect(Unit) {
-        xLinksOn = xLinksEnabled(context)
+        redditLinksOn = redditLinksEnabled(context)
         onPauseOrDispose { }
     }
-    var dialog by remember { mutableStateOf(OpenDialog.NONE) }
+    // Store can be installed while the app is away, so both are read again when the app comes back.
+    var present by remember { mutableStateOf(StoreLink.present(context)) }
+    var own by remember { mutableStateOf(StoreLink.selfUpdates(context)) }
+    DisposableEffect(Unit) {
+        val lifecycle = ProcessLifecycleOwner.get().lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                present = StoreLink.present(context)
+                own = StoreLink.selfUpdates(context)
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    var dialog by rememberSaveable { mutableStateOf(OpenDialog.NONE) }
+    // The tile whose long press is open (its id), "" when none.
+    var tileId by rememberSaveable { mutableStateOf("") }
+    var sectionId by rememberSaveable { mutableStateOf(APPEARANCE.id) }
+    val section = SECTIONS.first { it.id == sectionId }
+    // On a phone every section starts folded; the one open stays open across a turn of the screen.
+    var openId by rememberSaveable { mutableStateOf("") }
+    val openSection = SECTIONS.firstOrNull { it.id == openId }
+    // The page's scroll, held here so a drag on the header drives it (FloatingFrame's `scroll`): the folded
+    // list on a phone, the chosen section's page on a wide window (it starts at the top again for each section).
+    val compactScroll = rememberScrollState()
+    val detailScroll = rememberSaveable(sectionId, saver = ScrollState.Saver) { ScrollState(0) }
 
     LaunchedEffect(Unit) { viewModel.measureStorage() }
 
@@ -147,7 +233,7 @@ fun SettingsScreen(
      * The progress line of automatic saving is a notification like any
      * other, so Android 13 and later want the same permission. Asked at the
      * moment automatic saving is turned on, and a refusal changes nothing to
-     * the saving itself, only to seeing how far it is. Same as LinkedOut.
+     * the saving itself, only to seeing how far it is.
      */
     val downloadNotificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -200,110 +286,63 @@ fun SettingsScreen(
         }
     }
 
-    // Scrolls at full width, rows pushed in by the readable inset, so the
-    // margins of a tablet scroll like the rest. See ReadableScroll.
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = LocalReadableInset.current)
-    ) {
-        // The screen draws under the status bar, its first row starts below it.
-        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-        ScreenBanner(title = "Settings")
+    val measuring = "Measuring"
+    val storageSize = storageBytes?.let { Formatter.formatShortFileSize(context, it) }
+    val imageCacheSize = imageCacheBytes?.let { Formatter.formatShortFileSize(context, it) }
+    val mediaSize = offlineBytes?.let { bytes ->
+        if (offlineCount == 0) "Nothing saved yet" else "$offlineCount files, ${Formatter.formatShortFileSize(context, bytes)}"
+    }
 
-        Section("Appearance") {
-            SettingRow(
-                title = "Theme",
-                summary = themeLabel(settings.themeMode),
-                onClick = { dialog = OpenDialog.THEME }
-            )
-            SwitchRow(
-                title = "Pure black",
+    val tiles: Map<SettingsSection, List<SettingsSwitchTile>> = mapOf(
+        APPEARANCE to listOf(
+            SettingsSwitchTile(
+                id = "black", name = "Pure black", title = "Pure black", icon = SettingsIcons.Night,
                 summary = "Deeper blacks in dark mode. Easier on the battery with OLED screens.",
-                checked = settings.pureBlack,
-                enabled = settings.themeMode != ThemeMode.LIGHT,
+                checked = settings.pureBlack, enabled = settings.themeMode != ThemeMode.LIGHT,
                 onChange = viewModel::setPureBlack
-            )
-            SwitchRow(
-                title = "Glass effects",
+            ),
+            SettingsSwitchTile(
+                id = "glass", name = "Glass effects", title = "Glass effects", icon = SettingsIcons.AutoAwesome,
                 summary = "Zones and floating buttons in liquid glass, over a soft light in your wallpaper's colours.",
-                checked = settings.glass,
-                onChange = viewModel::setGlass
-            )
-            SwitchRow(
-                title = "Show counts",
-                summary = "Replies, reposts, quotes and likes under each post.",
-                checked = settings.showCounts,
-                onChange = viewModel::setShowCounts
-            )
-            SettingRow(
-                title = "Text size",
-                summary = textScaleLabel(settings.textScale) + ", on top of Android's font size",
-                onClick = { dialog = OpenDialog.TEXT_SIZE }
-            )
-            SwitchRow(
-                title = "Compact posts",
+                checked = settings.glass, onChange = viewModel::setGlass
+            ),
+            SettingsSwitchTile(
+                id = "counts", name = "Counts", title = "Show counts", icon = FrontrIcons.Heart,
+                summary = "Comments and votes under each post.",
+                checked = settings.showCounts, onChange = viewModel::setShowCounts
+            ),
+            SettingsSwitchTile(
+                id = "compact", name = "Compact posts", title = "Compact posts", icon = SettingsIcons.GridView,
                 summary = "Tighter spacing, smaller avatars and shorter pictures. More posts on screen.",
-                checked = settings.compactPosts,
-                onChange = viewModel::setCompactPosts
-            )
-            SwitchRow(
-                title = "Square avatars",
+                checked = settings.compactPosts, onChange = viewModel::setCompactPosts
+            ),
+            SettingsSwitchTile(
+                id = "square", name = "Square avatars", title = "Square avatars", icon = FrontrIcons.Person,
                 summary = "Rounded squares instead of circles.",
-                checked = settings.squareAvatars,
-                onChange = viewModel::setSquareAvatars
+                checked = settings.squareAvatars, onChange = viewModel::setSquareAvatars
             )
-        }
-
-        Section("Media") {
-            SwitchRow(
-                title = "Media on Wi-Fi only",
+        ),
+        MEDIA to listOf(
+            SettingsSwitchTile(
+                id = "mediaWifi", name = "Media on Wi-Fi", title = "Media on Wi-Fi only", icon = SettingsIcons.Wifi,
                 summary = "On mobile data, pictures and videos wait for a tap. Avatars still load.",
-                checked = settings.mediaOnWifiOnly,
-                onChange = viewModel::setMediaOnWifiOnly
-            )
-            SettingRow(
-                title = "Save media automatically",
-                summary = autoDownloadLabel(settings.autoDownloadMedia),
-                onClick = { dialog = OpenDialog.AUTO_DOWNLOAD }
-            )
-            SwitchRow(
-                title = "Play videos automatically",
+                checked = settings.mediaOnWifiOnly, onChange = viewModel::setMediaOnWifiOnly
+            ),
+            SettingsSwitchTile(
+                id = "autoplay", name = "Autoplay", title = "Play videos automatically", icon = FrontrIcons.Play,
                 summary = "Videos and GIFs play silently in the list as you scroll, and start " +
                     "when opened. Never on mobile data while Wi-Fi only is on.",
-                checked = settings.autoplayVideos,
-                onChange = viewModel::setAutoplayVideos
-            )
-            SwitchRow(
-                title = "Start videos muted",
+                checked = settings.autoplayVideos, onChange = viewModel::setAutoplayVideos
+            ),
+            SettingsSwitchTile(
+                id = "muted", name = "Start muted", title = "Start videos muted", icon = FrontrIcons.VolumeOff,
                 summary = "Sound stays off until you tap the speaker.",
-                checked = settings.startMuted,
-                onChange = viewModel::setStartMuted
+                checked = settings.startMuted, onChange = viewModel::setStartMuted
             )
-        }
-
-        Section("Reading") {
-            SettingRow(
-                title = "Start on",
-                summary = startTabLabel(settings.startTab),
-                onClick = { dialog = OpenDialog.START_TAB }
-            )
-            SettingRow(
-                title = "Open Reddit links in Frontr",
-                summary = if (xLinksOn) {
-                    "On. reddit.com links open here."
-                } else {
-                    "Off. Turn on \"Open supported links\" and add the reddit.com links. " +
-                        "Sharing a link to Frontr works either way."
-                },
-                onClick = { openLinkSettings(context) }
-            )
-        }
-
-        Section("Background updates") {
-            SwitchRow(
-                title = "Check for new posts",
+        ),
+        BACKGROUND to listOf(
+            SettingsSwitchTile(
+                id = "sync", name = "New posts", title = "Check for new posts", icon = FrontrIcons.Refresh,
                 summary = "Keeps Home up to date and saves new posts, even when the app is closed.",
                 checked = settings.backgroundSync,
                 onChange = { enabled ->
@@ -312,128 +351,231 @@ fun SettingsScreen(
                     // work that runs with the app closed. See BatteryExemption.
                     if (enabled) BatteryExemption.request(context)
                 }
-            )
-            SettingRow(
-                title = "Frequency",
-                summary = intervalLabel(settings.syncIntervalMinutes),
-                enabled = settings.backgroundSync,
-                onClick = { dialog = OpenDialog.FREQUENCY }
-            )
-            SwitchRow(
-                title = "Wi-Fi only",
+            ),
+            SettingsSwitchTile(
+                id = "syncWifi", name = "Wi-Fi only", title = "Wi-Fi only", icon = SettingsIcons.Wifi,
                 summary = "Uses no mobile data for background checks.",
-                checked = settings.syncOnWifiOnly,
-                enabled = settings.backgroundSync,
+                checked = settings.syncOnWifiOnly, enabled = settings.backgroundSync,
                 onChange = viewModel::setWifiOnly
-            )
-            SwitchRow(
-                title = "Notify about new posts",
+            ),
+            SettingsSwitchTile(
+                id = "notify", name = "Notify", title = "Notify about new posts", icon = FrontrIcons.Bell,
                 summary = when {
                     !settings.backgroundSync -> "Needs \"Check for new posts\"."
                     settings.notifyNewPosts && !notificationsAllowed ->
                         "Blocked in Android settings. Tap to allow."
                     else -> "A notification for each new post Home would show, grouped, one sound per check."
                 },
-                checked = settings.notifyNewPosts && notificationsAllowed,
-                enabled = settings.backgroundSync,
                 // Shown off while Android blocks it, so a tap then means
                 // "make it work" and leads to the permission or Android's page.
+                checked = settings.notifyNewPosts && notificationsAllowed, enabled = settings.backgroundSync,
                 onChange = onNotifyChange
             )
-        }
+        ),
+        ABOUT to listOf(
+            // Without Store the app always updates itself: the switch says so and is locked.
+            SettingsSwitchTile(
+                id = "self", name = "Update by itself", title = "Update by itself", icon = SettingsIcons.Update,
+                summary = when {
+                    !present -> "Store is not installed"
+                    !own -> "Store updates this app"
+                    else -> "Turn off to let Store update Frontr."
+                },
+                checked = !present || own, enabled = present,
+                onChange = { on ->
+                    haptics.toggle(on)
+                    StoreLink.setSelfUpdates(context, on)
+                    own = on
+                }
+            )
+        )
+    )
 
-        Section("Storage") {
-            SettingRow(
-                title = "Keep posts",
-                summary = keepLabel(settings.keepPostsDays) +
-                    ". Saved media follows the same limit.",
+    // What opens a choice, a page or a link: tiles of the same grid, the value as the second line.
+    val actions: Map<SettingsSection, List<SettingsActionTile>> = mapOf(
+        APPEARANCE to listOf(
+            SettingsActionTile(
+                id = "theme", name = "Theme", title = "Theme", icon = SettingsIcons.Brightness,
+                value = themeLabel(settings.themeMode), summary = themeLabel(settings.themeMode),
+                onClick = { dialog = OpenDialog.THEME }
+            ),
+            SettingsActionTile(
+                id = "textSize", name = "Text size", title = "Text size", icon = SettingsIcons.FormatSize,
+                value = textScaleLabel(settings.textScale),
+                summary = textScaleLabel(settings.textScale) + ", on top of Android's font size",
+                onClick = { dialog = OpenDialog.TEXT_SIZE }
+            )
+        ),
+        MEDIA to listOf(
+            SettingsActionTile(
+                id = "autoSave", name = "Save media", title = "Save media automatically", icon = FrontrIcons.Download,
+                value = autoDownloadLabel(settings.autoDownloadMedia), summary = autoDownloadLabel(settings.autoDownloadMedia),
+                onClick = { dialog = OpenDialog.AUTO_DOWNLOAD }
+            )
+        ),
+        READING to listOf(
+            SettingsActionTile(
+                id = "startTab", name = "Start on", title = "Start on", icon = FrontrIcons.Home,
+                value = startTabLabel(settings.startTab), summary = startTabLabel(settings.startTab),
+                onClick = { dialog = OpenDialog.START_TAB }
+            ),
+            SettingsActionTile(
+                id = "redditLinks", name = "Reddit links", title = "Open Reddit links in Frontr", icon = SettingsIcons.Link,
+                value = if (redditLinksOn) "On" else "Off",
+                summary = if (redditLinksOn) {
+                    "On. reddit.com links open here."
+                } else {
+                    "Off. Turn on \"Open supported links\" and add the reddit.com " +
+                        "links. Sharing a link to Frontr works either way."
+                },
+                onClick = { openLinkSettings(context) }
+            )
+        ),
+        BACKGROUND to listOf(
+            SettingsActionTile(
+                id = "frequency", name = "Frequency", title = "Frequency", icon = SettingsIcons.Timer,
+                value = intervalLabel(settings.syncIntervalMinutes),
+                summary = if (settings.backgroundSync) {
+                    "Checks run " + intervalLabel(settings.syncIntervalMinutes).replaceFirstChar { it.lowercase() } + "."
+                } else {
+                    "Needs \"Check for new posts\"."
+                },
+                // Depends on the switch above: a tap then only explains.
+                onClick = if (settings.backgroundSync) ({ dialog = OpenDialog.FREQUENCY }) else ({ tileId = "frequency" })
+            )
+        ),
+        STORAGE to listOf(
+            SettingsActionTile(
+                id = "keep", name = "Keep posts", title = "Keep posts", icon = SettingsIcons.Timer,
+                value = keepLabel(settings.keepPostsDays),
+                summary = keepLabel(settings.keepPostsDays) + ". Saved media follows the same limit.",
                 onClick = { dialog = OpenDialog.KEEP }
-            )
-            SettingRow(
-                title = "Saved posts",
-                summary = storageBytes
-                    ?.let { Formatter.formatShortFileSize(context, it) }
-                    ?.let { "$it. Tap to delete." } ?: "Measuring",
+            ),
+            SettingsActionTile(
+                id = "savedPosts", name = "Saved posts", title = "Saved posts", icon = FrontrIcons.Delete,
+                value = storageSize ?: measuring, summary = storageSize?.let { "$it. Tap to delete." } ?: measuring,
                 onClick = { dialog = OpenDialog.CLEAR }
-            )
-            SettingRow(
-                title = "Saved media",
-                summary = offlineBytes?.let {
-                    "$offlineCount files, ${Formatter.formatShortFileSize(context, it)}. " +
-                        "Tap to browse and delete."
-                } ?: "Measuring",
+            ),
+            SettingsActionTile(
+                id = "savedMedia", name = "Saved media", title = "Saved media", icon = FrontrIcons.Download,
+                value = mediaSize ?: measuring, summary = mediaSize?.let { "$it. Tap to browse and delete." } ?: measuring,
                 onClick = onOpenSavedMedia
-            )
-            SettingRow(
-                title = "Cached images",
-                summary = imageCacheBytes
-                    ?.let { Formatter.formatShortFileSize(context, it) }
-                    ?.let { "$it. Tap to delete." } ?: "Measuring",
+            ),
+            SettingsActionTile(
+                id = "cachedImages", name = "Cached images", title = "Cached images", icon = FrontrIcons.Delete,
+                value = imageCacheSize ?: measuring, summary = imageCacheSize?.let { "$it. Tap to delete." } ?: measuring,
                 onClick = viewModel::clearImageCache
             )
-        }
-
-        Section("Subreddits file") {
-            SettingRow(
-                title = "Export subreddits",
-                summary = "Save the subreddits you follow, and their folders, to a file.",
+        ),
+        SUBREDDITS to listOf(
+            SettingsActionTile(
+                id = "export", name = "Export", title = "Export subreddits", icon = SettingsIcons.Upload,
+                value = "To a file", summary = "Save the subreddits you follow, and their folders, to a file.",
                 onClick = { exporter.launch("frontr-subreddits.json") }
-            )
-            SettingRow(
-                title = "Import subreddits",
+            ),
+            SettingsActionTile(
+                id = "import", name = "Import", title = "Import subreddits", icon = FrontrIcons.Download,
+                value = "From a file",
                 summary = "From a Frontr export, or a text file of subreddit names or reddit.com links.",
                 onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
             )
-        }
-
-        Section("Help") {
-            SettingRow(
-                title = "Review the tutorial",
-                summary = "Where to find a subreddit, and the ways to follow one.",
+        ),
+        SUPPORT to listOf(
+            SettingsActionTile(
+                id = "log", name = "Activity log", title = "Activity log", icon = SettingsIcons.Code,
+                value = "Open", summary = "What Frontr did lately, to report a problem.",
+                onClick = onOpenDebugLog
+            )
+        ),
+        ABOUT to listOf(
+            // Dialer's About "Guide" tile (YAZ/Dialer feature/settings/SettingsScreen.kt, id "guide"):
+            // the same first tile in every app. The guide opens over Settings and shows the current choices,
+            // so welcomeSeen is kept instead of reset as Dialer does.
+            SettingsActionTile(
+                id = "guide", name = "Guide", title = "Guide", icon = FrontrIcons.Play,
+                value = setup.leftText(), summary = "See the welcome pages again",
                 onClick = onOpenWelcome
-            )
-        }
-
-        Section("About") {
-            SettingRow(
-                title = "Updates",
-                summary = updatesLabel(settings.updates),
+            ),
+            SettingsActionTile(
+                id = "updates", name = "Updates", title = "Updates", icon = SettingsIcons.Update,
+                value = updatesLabel(settings.updates), summary = updatesLabel(settings.updates),
                 onClick = { dialog = OpenDialog.UPDATES }
-            )
-            SettingRow(
-                title = "Frontr ${BuildConfig.VERSION_NAME}",
-                summary = "Read public Reddit communities with no account, no tracking and no ads.",
-                onClick = null
-            )
-            SettingRow(
-                title = "Source code",
-                summary = "github.com/213YaZ786/Frontr",
+            ),
+            SettingsActionTile(
+                id = "version", name = "Frontr", title = "Frontr ${BuildConfig.VERSION_NAME}", icon = FrontrIcons.Info,
+                value = BuildConfig.VERSION_NAME, summary = "Read public Reddit communities with no account, no tracking and no ads."
+            ),
+            SettingsActionTile(
+                id = "source", name = "Source code", title = "Source code", icon = SettingsIcons.Code,
+                value = "github.com/213YaZ786/Frontr", summary = "github.com/213YaZ786/Frontr",
                 onClick = { uriHandler.openUri("https://github.com/213YaZ786/Frontr") }
+            ),
+            SettingsActionTile(
+                id = "thanks", name = "Thanks", title = "Thanks", icon = FrontrIcons.Heart,
+                value = "Reddit", summary = "To the communities that make Reddit worth reading."
             )
-            SettingRow(
-                title = "Thanks",
-                summary = "To the communities that make Reddit worth reading.",
-                onClick = null
-            )
-        }
+        )
+    )
 
-        // For reporting a problem, not for everyday use: folded away at the
-        // very end, one tap opens it.
-        var troubleshooting by rememberSaveable { mutableStateOf(false) }
-        // One zone like the sections above, its rows unfolding on a tap.
-        ZoneSurface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 24.dp),
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Column {
-                SettingRow(title = "Troubleshooting", summary = null, onClick = { troubleshooting = !troubleshooting })
-                if (troubleshooting) {
-                    SettingRow(title = "Activity log", summary = null, onClick = onOpenDebugLog)
+    // One section's page: its name, then its tiles: the switches first, then what opens something.
+    val page: @Composable ColumnScope.(SettingsSection) -> Unit = { which ->
+        SettingsSectionTitle(which.title)
+        val list: List<SettingsTile> = sectionTiles(which, tiles, actions)
+        if (list.isNotEmpty()) SettingsTileGrid(list) { tileId = it.id }
+    }
+
+    // The window decides: a list and a page side by side from Medium up, as a phone held upright
+    // keeps one page. The panes take the whole width, so the readable inset is dropped; the side dock
+    // still needs its room when the readable column no longer clears it (see FrontrApp's clearsPill).
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = WidthClass.of(maxWidth) != WidthClass.COMPACT
+        val inset = LocalReadableInset.current
+        val dockRoom = if (wide && inset >= SideDockClearance) SideDockClearance else 0.dp
+        val dockPadding = LocalDockPadding.current
+        CompositionLocalProvider(LocalReadableInset provides if (wide) 0.dp else inset) {
+            Box(Modifier.fillMaxSize().padding(start = dockRoom)) {
+                FloatingFrame(
+                    bottom = 0.dp,
+                    scroll = if (wide) detailScroll else compactScroll,
+                    top = { FloatingTop("Settings") },
+                    largeTitle = LargeTitle("Settings")
+                ) { padding ->
+                    if (wide) {
+                        SettingsListDetail(
+                            padding = padding,
+                            sections = SECTIONS,
+                            section = section,
+                            onSection = { sectionId = it.id },
+                            detailScroll = detailScroll,
+                            detail = { page(section) }
+                        )
+                    } else {
+                        // Scrolls at full width, rows pushed in by the readable inset, so the
+                        // margins of a tablet scroll like the rest. See ReadableScroll.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(compactScroll)
+                                .padding(horizontal = LocalReadableInset.current)
+                        ) {
+                            SettingsHeaderSpacer(padding)
+                            Spacer(Modifier.height(24.dp))
+                            SettingsFoldedSections(SECTIONS, open = openSection, onOpen = { openId = it?.id.orEmpty() }) { which ->
+                                val list: List<SettingsTile> = sectionTiles(which, tiles, actions)
+                                if (list.isNotEmpty()) SettingsTileGrid(list) { tileId = it.id }
+                            }
+                            Spacer(Modifier.height(24.dp))
+                            // The floating dock covers the bottom: the last section stays above it.
+                            Spacer(Modifier.height(dockPadding))
+                        }
+                    }
                 }
             }
         }
+    }
 
-        Spacer(Modifier.height(24.dp + LocalDockPadding.current))
+    (tiles.values.flatten() + actions.values.flatten()).firstOrNull { it.id == tileId }?.let { tile ->
+        SettingsTileDialogs(tile, onDismiss = { tileId = "" })
     }
 
     when (dialog) {
@@ -441,28 +583,28 @@ fun SettingsScreen(
             title = "Start on",
             options = StartTab.entries.map { it to startTabLabel(it) },
             selected = settings.startTab,
-            onSelect = viewModel::setStartTab,
+            onPick = viewModel::setStartTab,
             onDismiss = { dialog = OpenDialog.NONE }
         )
         OpenDialog.THEME -> ChoiceDialog(
             title = "Theme",
             options = ThemeMode.entries.map { it to themeLabel(it) },
             selected = settings.themeMode,
-            onSelect = viewModel::setTheme,
+            onPick = viewModel::setTheme,
             onDismiss = { dialog = OpenDialog.NONE }
         )
         OpenDialog.TEXT_SIZE -> ChoiceDialog(
             title = "Text size",
             options = TEXT_SCALES.map { it to textScaleLabel(it) },
             selected = settings.textScale,
-            onSelect = viewModel::setTextScale,
+            onPick = viewModel::setTextScale,
             onDismiss = { dialog = OpenDialog.NONE }
         )
         OpenDialog.UPDATES -> ChoiceDialog(
             title = "Updates",
             options = UpdateMode.entries.map { it to updatesLabel(it) },
             selected = settings.updates,
-            onSelect = { mode ->
+            onPick = { mode ->
                 viewModel.setUpdates(mode)
                 // Installing needs Android's leave, asked when chosen.
                 if (mode == UpdateMode.INSTALL && !Updates.canInstall(context)) Updates.allowInstalls(context)
@@ -473,7 +615,7 @@ fun SettingsScreen(
             title = "Save media automatically",
             options = AutoDownload.entries.map { it to autoDownloadLabel(it) },
             selected = settings.autoDownloadMedia,
-            onSelect = { choice ->
+            onPick = { choice ->
                 viewModel.setAutoDownloadMedia(choice)
                 if (choice != AutoDownload.OFF) askForDownloadNotifications()
             },
@@ -483,14 +625,14 @@ fun SettingsScreen(
             title = "Keep posts",
             options = KEEP_DAYS.map { it to keepLabel(it) },
             selected = settings.keepPostsDays,
-            onSelect = viewModel::setKeepPostsDays,
+            onPick = viewModel::setKeepPostsDays,
             onDismiss = { dialog = OpenDialog.NONE }
         )
         OpenDialog.FREQUENCY -> ChoiceDialog(
             title = "Check for new posts",
             options = INTERVALS.map { it to intervalLabel(it) },
             selected = settings.syncIntervalMinutes,
-            onSelect = viewModel::setInterval,
+            onPick = viewModel::setInterval,
             onDismiss = { dialog = OpenDialog.NONE }
         )
         OpenDialog.CLEAR -> ZoneAlertDialog(
@@ -511,82 +653,6 @@ fun SettingsScreen(
         )
         OpenDialog.NONE -> Unit
     }
-}
-
-/** A titled group of rows on one rounded card, the Obtainium way. */
-@Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    // Centred and at title size: a section heading names what the zone below
-    // holds, which is data about the screen and not one of its rows.
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 10.dp)
-    )
-    ZoneSurface(
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-    ) {
-        Column(content = content)
-    }
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    summary: String?,
-    onClick: (() -> Unit)?,
-    enabled: Boolean = true,
-    quiet: Boolean = false,
-    trailing: (@Composable () -> Unit)? = null
-) {
-    val haptics = rememberHaptics()
-    val alpha = if (enabled) 1f else 0.38f
-    ListItem(
-        headlineContent = { Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)) },
-        supportingContent = summary?.let {
-            { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha)) }
-        },
-        trailingContent = trailing,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        // Every row answers with a tick; a switch row answers with the switch's
-        // own feel instead, so it is quiet here.
-        modifier = if (onClick != null) {
-            Modifier.clickable(enabled = enabled) {
-                if (!quiet) haptics.tick()
-                onClick()
-            }
-        } else {
-            Modifier
-        }
-    )
-}
-
-@Composable
-private fun SwitchRow(
-    title: String,
-    summary: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit,
-    enabled: Boolean = true
-) {
-    val haptics = rememberHaptics()
-    val change = { on: Boolean ->
-        haptics.toggle(on)
-        onChange(on)
-    }
-    SettingRow(
-        title = title,
-        summary = summary,
-        enabled = enabled,
-        quiet = true,
-        onClick = { change(!checked) },
-        trailing = { GlassSwitch(checked = checked, onCheckedChange = change, enabled = enabled) }
-    )
 }
 
 private fun startTabLabel(tab: StartTab): String = when (tab) {
@@ -610,21 +676,26 @@ private fun intervalLabel(minutes: Int): String = when {
 }
 
 /**
- * Whether Android sends reddit.com links to Frontr. They can only be enabled
- * by the reader, since only Reddit could verify the domain, so this reads the
- * reader's choice rather than a verification.
+ * True when the reader has allowed Frontr to open Reddit links. The keys of hostToStateMap are the hosts the
+ * manifest declares, so this asks for the exact strings written there. Only the reader can switch them on, since
+ * only Reddit could verify the domains, so this reads the reader's choice rather than a verification.
+ * Ported from MTGA's xLinksEnabled
+ * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/settings/SettingsScreen.kt#xLinksEnabled
+ * and LinkedOut's linkedInLinksEnabled, which tries every declared host
+ * https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/settings/SettingsScreen.kt#linkedInLinksEnabled
  */
-private fun xLinksEnabled(context: Context): Boolean {
+private fun redditLinksEnabled(context: Context): Boolean {
     val manager = context.getSystemService(DomainVerificationManager::class.java) ?: return false
     val state = runCatching { manager.getDomainVerificationUserState(context.packageName) }
         .getOrNull() ?: return false
     if (!state.isLinkHandlingAllowed) return false
-    val xState = state.hostToStateMap["www.reddit.com"] ?: state.hostToStateMap["reddit.com"]
-    return xState == DomainVerificationUserState.DOMAIN_STATE_SELECTED ||
-        xState == DomainVerificationUserState.DOMAIN_STATE_VERIFIED
+    return listOf("reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "m.reddit.com", "redd.it").any { host ->
+        val hostState = state.hostToStateMap[host]
+        hostState == DomainVerificationUserState.DOMAIN_STATE_SELECTED ||
+            hostState == DomainVerificationUserState.DOMAIN_STATE_VERIFIED
+    }
 }
 
-/** The system screen where supported links are switched on for this app. */
 /** Frontr's own notification page in Android settings. */
 private fun openNotificationSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -633,9 +704,10 @@ private fun openNotificationSettings(context: Context) {
     runCatching { context.startActivity(intent) }
 }
 
+/** The system screen where supported links are switched on for this app. */
 private fun openLinkSettings(context: Context) {
     val intent = Intent(
-        android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
+        Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
         Uri.parse("package:${context.packageName}")
     )
     runCatching { context.startActivity(intent) }

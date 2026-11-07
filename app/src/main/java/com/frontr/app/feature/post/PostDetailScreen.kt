@@ -30,7 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ShapeDefaults
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -387,7 +387,7 @@ private fun PostBody(
     // same object, only larger.
     ZoneSurface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(24.dp)
+        shape = ShapeDefaults.ExtraLarge
     ) {
     Column(
         modifier = Modifier
@@ -399,7 +399,7 @@ private fun PostBody(
 
         Surface(
             onClick = { onOpenProfile(post.authorHandle) },
-            shape = RoundedCornerShape(16.dp),
+            shape = ShapeDefaults.Large,
             // See through: this is a tap target on the zone, not a second
             // card inside the first one.
             color = Color.Transparent,
@@ -430,10 +430,24 @@ private fun PostBody(
             }
         }
 
-        if (post.text.isNotBlank()) {
+        // The title on its own line, full width, above the content, as in the feed card: Infinity's item_post_text.xml
+        // (https://raw.githubusercontent.com/Docile-Alligator/Infinity-For-Reddit/master/app/src/main/res/layout/item_post_text.xml,
+        // title_text_view_item_post_text_type, then content_text_view_item_post_text_type) and MTGA's PostBody
+        // (https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/post/PostDetailScreen.kt#PostBody),
+        // whose header and body are kept. The title is the first paragraph of a post's text (RedditParser.post).
+        val isPost = post.id.startsWith("t3_")
+        val title = if (isPost) post.text.substringBefore("\n\n").trim() else ""
+        val body = if (isPost) post.text.substringAfter("\n\n", "").trim() else post.text
+        if (title.isNotBlank()) {
+            SelectionContainer {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        if (body.isNotBlank()) {
             val linkColor = MaterialTheme.colorScheme.primary
-            val annotated = remember(post.id, post.text, post.links, linkColor) {
-                linkify(post.text, post.links, linkColor, onOpenProfile)
+            val annotated = remember(post.id, body, post.links, linkColor) {
+                linkify(body, post.links, linkColor, onOpenProfile)
             }
             SelectionContainer {
                 Text(
