@@ -80,8 +80,8 @@ val appModule = module {
     viewModel { AccountsViewModel(get(), get(), get()) }
     viewModel { PostDetailViewModel(get(), get()) }
     viewModel { SearchViewModel(get()) }
-    viewModel { FeedViewModel(get(), get(), get()) }
-    viewModel { TimelineViewModel(get(), get(), get(), get()) }
+    viewModel { FeedViewModel(get(), get(), get(), get()) }
+    viewModel { TimelineViewModel(get(), get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), androidContext()) }
     viewModel { SavedMediaViewModel(get()) }
 }

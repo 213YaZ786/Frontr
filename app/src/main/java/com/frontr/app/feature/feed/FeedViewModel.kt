@@ -10,6 +10,7 @@ import com.frontr.app.core.model.FollowedAccount
 import com.frontr.app.core.model.Post
 import com.frontr.app.data.accounts.AccountStore
 import com.frontr.app.data.cache.FeedCache
+import com.frontr.app.data.read.ReadMarks
 import com.frontr.app.data.repository.FeedRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,8 @@ data class FeedUiState(
 class FeedViewModel(
     private val repository: FeedRepository,
     private val accounts: AccountStore,
-    private val cache: FeedCache
+    private val cache: FeedCache,
+    private val readMarks: ReadMarks
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FeedUiState())
@@ -79,6 +81,9 @@ class FeedViewModel(
             when (val outcome = repository.loadFeed(handle)) {
                 is Outcome.Success -> {
                     val merged = cache.append(outcome.value)
+                    // The pages a refresh read further: what was published before the previous visit is not new.
+                    // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineViewModel.kt#fetch
+                    readMarks.markReadIfOld(merged.posts.map { it.id to it.publishedAtMillis })
                     accounts.updateDisplayName(handle, outcome.value.displayName)
                     _state.value = _state.value.copy(
                         loading = false,
@@ -108,6 +113,9 @@ class FeedViewModel(
             when (val outcome = repository.loadFeed(current.handle, cursor)) {
                 is Outcome.Success -> {
                     val merged = cache.append(outcome.value, isPagedFetch = true)
+                    // An older page: what was published before the previous visit is not new.
+                    // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineViewModel.kt#loadMore
+                    readMarks.markReadIfOld(merged.posts.map { it.id to it.publishedAtMillis })
                     _state.value = _state.value.copy(
                         feed = merged,
                         loadingMore = false,

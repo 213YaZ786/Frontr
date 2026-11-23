@@ -7,6 +7,14 @@ import com.frontr.app.ui.component.RejectOnFailure
 import com.frontr.app.ui.component.rememberHaptics
 import com.frontr.app.ui.component.LoadingMark
 import com.frontr.app.ui.component.BoldButton
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -244,21 +252,42 @@ fun FeedScreen(
             }
 
             item(key = "footer") {
+                // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/feed/FeedScreen.kt#FeedScreen
+                // https://github.com/androidx/androidx/blob/androidx-main/compose/animation/animation/samples/src/main/java/androidx/compose/animation/samples/AnimatedContentSamples.kt#SimpleAnimatedContentSample
+                // The footer's states (mark, button, text) cross through nothing, as the draft shows (no Crossfade: it makes the
+                // height jump): animateContentSize is the one animator of the height, so AnimatedContent's own size change snaps.
+                // not ported: FeedScreen (the screen is this file's own, only the footer is taken)
+                // not ported: simpleAnimatedContentSample (the sample's function; its AnimatedContent is used here, inline)
+                // not ported: foo, bar, baz (the sample's own demo functions)
+                val footer = when {
+                    loadingMore -> FeedFooter.Loading
+                    canMore -> if (pagingFailed) FeedFooter.Retry else FeedFooter.More
+                    else -> FeedFooter.End
+                }
                 Box(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = readable).padding(24.dp),
+                    modifier = Modifier.animateItem().fillMaxWidth().padding(horizontal = readable).animateContentSize().padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    when {
-                        loadingMore -> LoadingMark(size = 28.dp)
-                        canMore -> BoldButton(onClick = { viewModel.loadMore(manual = true) }) {
-                            Text(if (pagingFailed) "Try again" else "Load older posts")
+                    AnimatedContent(
+                        targetState = footer,
+                        transitionSpec = {
+                            (fadeIn(tween(210, delayMillis = 90)) togetherWith fadeOut(tween(90)))
+                                .using(SizeTransform(clip = false) { _, _ -> snap() })
+                        },
+                        label = "feedFooter"
+                    ) { shown ->
+                        when (shown) {
+                            FeedFooter.Loading -> LoadingMark(size = 28.dp)
+                            FeedFooter.Retry, FeedFooter.More -> BoldButton(onClick = { viewModel.loadMore(manual = true) }) {
+                                Text(if (shown == FeedFooter.Retry) "Try again" else "Load older posts")
+                            }
+                            FeedFooter.End -> Text(
+                                "No older posts available.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
                         }
-                        else -> Text(
-                            "No older posts available.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
                     }
                 }
             }
@@ -268,3 +297,7 @@ fun FeedScreen(
         }
     }
 }
+
+// The footer's states, as LinkedOut's FeedScreen footer (its FeedFooter enum, local to that file).
+// https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/feed/FeedScreen.kt#FeedScreen
+private enum class FeedFooter { Loading, Retry, More, End }

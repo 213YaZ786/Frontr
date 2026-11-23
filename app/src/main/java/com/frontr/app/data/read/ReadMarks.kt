@@ -22,9 +22,12 @@ import java.io.File
  * because the only question ever asked is "has this one gone by", and the
  * list is bounded, so it cannot grow past the cache it describes.
  */
-class ReadMarks(context: Context) {
+class ReadMarks(filesDir: File) {
 
-    private val file = File(context.filesDir, "read-posts.json")
+    /** The app's own, as Koin builds it; the folder constructor is what a JVM test uses. */
+    constructor(context: Context) : this(context.filesDir)
+
+    private val file = File(filesDir, "read-posts.json")
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _read = MutableStateFlow<Set<String>>(emptySet())
@@ -41,7 +44,23 @@ class ReadMarks(context: Context) {
     val readyState: StateFlow<Boolean> = _ready.asStateFlow()
     val ready: Boolean get() = _ready.value
 
-    private val visitFile = File(context.filesDir, "last-visit.txt")
+    private val visitFile = File(filesDir, "last-visit.txt")
+
+    /**
+     * When the reader last opened the app before this launch. Until the
+     * launch has read it, every post counts as old, as in MTGA.
+     */
+    @Volatile
+    private var previousVisit: Long = Long.MAX_VALUE
+
+    /**
+     * Posts added after launch, an older page or a subreddit read again: what
+     * was published before the previous visit is not new, it only filled a gap.
+     *
+     * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/read/ReadMarks.kt#markReadIfOld
+     */
+    suspend fun markReadIfOld(posts: List<Pair<String, Long>>) =
+        add(posts.filter { it.second <= previousVisit }.map { it.first }.toSet())
 
     suspend fun load() {
         val stored = withContext(Dispatchers.IO) {
@@ -60,9 +79,12 @@ class ReadMarks(context: Context) {
      * until scrolled past. Up to 2.13 everything stored at launch counted
      * as read, so with background checks on no post was ever new. The very
      * first launch has no previous visit, and nothing is new then.
+     *
+     * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/read/ReadMarks.kt#markReadBeforeLastVisit
      */
     suspend fun markReadBeforeLastVisit(posts: Map<String, Long>) {
         val previous = withContext(Dispatchers.IO) { runCatching { visitFile.readText().trim().toLong() }.getOrNull() }
+        previousVisit = previous ?: System.currentTimeMillis()
         add(posts.filterValues { previous == null || it <= previous }.keys)
         withContext(Dispatchers.IO) { runCatching { visitFile.writeTextAtomically(System.currentTimeMillis().toString()) } }
     }

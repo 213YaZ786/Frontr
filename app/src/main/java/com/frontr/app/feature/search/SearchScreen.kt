@@ -1,8 +1,14 @@
 package com.frontr.app.feature.search
 
 import com.frontr.app.ui.component.GlassSearchField
-import com.frontr.app.ui.glass.LocalGlass
-import com.frontr.app.ui.glass.groundHere
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.frontr.app.ui.component.BarTitle
+import com.frontr.app.ui.component.FloatingTopBar
 import androidx.compose.material3.TopAppBarDefaults
 import com.frontr.app.ui.component.plus
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,7 +50,13 @@ import com.frontr.app.ui.icon.FrontrIcons
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
-/** Search through every post saved on this phone, instantly and offline. */
+/**
+ * Search through every post saved on this phone, instantly and offline.
+ *
+ * Port: https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/search/SearchScreen.kt#SearchScreen
+ * LinkedOut's ScreenBanner row is Frontr's FloatingTopBar here (as PostDetailScreen and SavedMediaScreen);
+ * not ported: BarAction (LinkedOut's own round action, it bans IconButton; Frontr keeps IconButton in the bar).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
@@ -75,39 +86,21 @@ fun SearchScreen(
         )
     }
 
+    // The bar folds away going down and returns going up, the list full screen.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         // The page's ground is painted under the whole app, see MainActivity.
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                // The page's ground where the bar sits, ambient light included.
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent),
-                modifier = Modifier.groundHere(LocalGlass.current, MaterialTheme.colorScheme.background),
+            FloatingTopBar(
+                scrollBehavior = scrollBehavior,
+                title = { BarTitle("Search") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(FrontrIcons.ArrowBack, contentDescription = "Back")
                     }
-                },
-                title = {
-                    GlassSearchField(
-                        value = typed,
-                        onValueChange = viewModel::setQuery,
-                        placeholder = "Search saved posts",
-                        trailingIcon = {
-                            if (typed.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.setQuery("") }) {
-                                    Icon(FrontrIcons.Close, contentDescription = "Clear")
-                                }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                        focusRequester = focusRequester,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(end = 12.dp)
-                    )
                 }
             )
         }
@@ -130,24 +123,52 @@ fun SearchScreen(
                 end = LocalReadableInset.current
             ).plus(padding)
         ) {
-            if (hint != null) {
-                item(key = "hint") {
-                    Text(
-                        hint,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(32.dp)
-                    )
-                }
-            } else if (state.results.isNotEmpty()) {
-                item(key = "count") {
-                    Text(
-                        if (state.results.size == 1) "1 post" else "${state.results.size} posts",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+            // The field is the first row of the list, so the whole page scrolls with it.
+            item(key = "field") {
+                GlassSearchField(
+                    value = typed,
+                    onValueChange = viewModel::setQuery,
+                    placeholder = "Search saved posts",
+                    trailingIcon = {
+                        // Clear fades and widens in once something is typed.
+                        AnimatedVisibility(
+                            visible = typed.isNotEmpty(),
+                            enter = fadeIn() + expandHorizontally(),
+                            exit = fadeOut() + shrinkHorizontally()
+                        ) {
+                            IconButton(onClick = { viewModel.setQuery("") }) {
+                                Icon(FrontrIcons.Close, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                    focusRequester = focusRequester,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
+            }
+
+            // The hint, or the count of results, under the field.
+            if (hint != null || state.results.isNotEmpty()) {
+                item(key = "status") {
+                    if (hint != null) {
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(32.dp)
+                        )
+                    } else {
+                        Text(
+                            if (state.results.size == 1) "1 post" else "${state.results.size} posts",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
 

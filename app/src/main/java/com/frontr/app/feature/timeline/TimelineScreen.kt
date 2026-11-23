@@ -46,8 +46,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -415,7 +421,8 @@ fun TimelineScreen(
                                 message = "File subreddits here from Subreddits, or show every subreddit.",
                                 actionLabel = "Show every subreddit",
                                 onAction = { viewModel.showFolder(null) },
-                                modifier = Modifier.fillParentMaxHeight(0.7f)
+                                // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
+                                modifier = Modifier.fillParentMaxHeight(0.7f).animateItem()
                             )
                         }
                     }
@@ -440,7 +447,11 @@ fun TimelineScreen(
                     }
 
                     item(key = "footer") {
-                        TimelineFooter(state = state, onLoadMore = { viewModel.loadMore(manual = true) })
+                        TimelineFooter(
+                            state = state,
+                            onLoadMore = { viewModel.loadMore(manual = true) },
+                            modifier = Modifier.animateItem()
+                        )
                     }
                 }
                 }
@@ -476,30 +487,55 @@ private fun subtitle(state: TimelineUiState): String? = when {
     else -> null
 }
 
+private enum class FooterKind { Loading, Failed, More, End }
+
+// The footer's states (mark, failure, button, text) cross through nothing, as the draft shows (no Crossfade: it makes the
+// height jump): animateContentSize is the one animator of the height, so AnimatedContent's own size change snaps. The
+// footer is an item of the list: LazyItemScope.animateItem places it.
+// https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineScreen.kt#TimelineFooter
+// https://github.com/androidx/androidx/blob/androidx-main/compose/animation/animation/samples/src/main/java/androidx/compose/animation/samples/AnimatedContentSamples.kt#SimpleAnimatedContentSample
+// not ported: FooterKind's doc and the TimelineScreen (the screen is this file's own, only the footer's states are taken)
+// not ported: simpleAnimatedContentSample (the sample's function; its AnimatedContent is used here, inline)
+// not ported: foo, bar, baz (the sample's own demo functions)
 @Composable
-private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit) {
+private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit, modifier: Modifier = Modifier) {
+    val kind = when {
+        state.loadingMore -> FooterKind.Loading
+        state.pagingFailed -> FooterKind.Failed
+        state.canLoadMore -> FooterKind.More
+        else -> FooterKind.End
+    }
     Box(
-        modifier = Modifier.fillMaxWidth().padding(24.dp),
+        modifier = modifier.fillMaxWidth().animateContentSize().padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        when {
-            state.loadingMore -> LoadingMark(size = 28.dp)
-            state.pagingFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Couldn't load older posts. Reddit is busy, " +
-                        "which usually clears in a minute.",
+        AnimatedContent(
+            targetState = kind,
+            transitionSpec = {
+                (fadeIn(tween(210, delayMillis = 90)) togetherWith fadeOut(tween(90)))
+                    .using(SizeTransform(clip = false) { _, _ -> snap() })
+            },
+            label = "timelineFooter"
+        ) { shown ->
+            when (shown) {
+                FooterKind.Loading -> LoadingMark(size = 28.dp)
+                FooterKind.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Couldn't load older posts. Reddit is busy, " +
+                            "which usually clears in a minute.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    BoldButton(onClick = onLoadMore) { Text("Try again") }
+                }
+                FooterKind.More -> BoldButton(onClick = onLoadMore) { Text("Load older posts") }
+                FooterKind.End -> Text(
+                    "No older posts available.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                BoldButton(onClick = onLoadMore) { Text("Try again") }
             }
-            state.canLoadMore -> BoldButton(onClick = onLoadMore) { Text("Load older posts") }
-            else -> Text(
-                "No older posts available.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

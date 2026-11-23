@@ -6,6 +6,7 @@ import com.frontr.app.core.common.AppError
 import com.frontr.app.core.media.AutoMediaDownloader
 import com.frontr.app.core.model.Post
 import com.frontr.app.data.accounts.AccountStore
+import com.frontr.app.data.read.ReadMarks
 import com.frontr.app.data.repository.TimelineRepository
 import com.frontr.app.data.settings.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,7 +49,8 @@ class TimelineViewModel(
     private val repository: TimelineRepository,
     private val accounts: AccountStore,
     private val settings: SettingsStore,
-    private val autoDownloader: AutoMediaDownloader
+    private val autoDownloader: AutoMediaDownloader,
+    private val readMarks: ReadMarks
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TimelineUiState())
@@ -267,6 +269,10 @@ class TimelineViewModel(
             repository.refresh(only, if (everything) null else asked, onProgress)
         }
         if (everything && only == null) everythingFetched = true
+        // A subreddit read again can bring posts published before the previous
+        // visit: they fill a gap, they are not new.
+        // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineViewModel.kt#fetch
+        readMarks.markReadIfOld(network.posts.map { it.id to it.publishedAtMillis })
         // What goes on screen is the folder shown now. It differs from what
         // was fetched after a pass over everything, and after a switch made
         // while the requests were out.
@@ -358,6 +364,9 @@ class TimelineViewModel(
             try {
                 val before = current.posts.size
                 val merged = repository.loadMore(folder)
+                // An older page: what was published before the previous visit is not new.
+                // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineViewModel.kt#loadMore
+                readMarks.markReadIfOld(merged.posts.map { it.id to it.publishedAtMillis })
                 val failed = merged.errors.isNotEmpty() || merged.posts.size <= before
                 if (failed) pagingFailedAtMillis = System.currentTimeMillis()
                 _state.value = _state.value.copy(

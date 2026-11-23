@@ -3,19 +3,21 @@ package com.frontr.app.ui.component
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -28,7 +30,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.PI
+import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -72,27 +76,39 @@ fun LoadingMark(
     val surface = MaterialTheme.colorScheme.surface
     val colours = listOf(lerp(accent, surface, 0.5f), lerp(accent, surface, 0.3f), accent)
 
-    val transition = rememberInfiniteTransition(label = "melting dots")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(LOOP_MILLIS, easing = LinearEasing), RepeatMode.Restart),
-        label = "gather"
-    )
-    val turn by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 2f * PI.toFloat(),
-        animationSpec = infiniteRepeatable(tween(TURN_MILLIS, easing = LinearEasing), RepeatMode.Restart),
-        label = "turn"
-    )
-    val angle = if (running) turn else 0f
+    // One time source for both ways, as MTGA's mark: the clock continues from where it stands, and a gesture's progress
+    // glides from there, so the dots never jump when `running` changes. Nothing runs at rest. One turn of the clock is
+    // TURN_MILLIS: the dots gather three times in it (phase) and turn once (angle).
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/ui/component/LoadingMark.kt#LoadingMark
+    // (not ported: the feathers, FEATHERS, FALL_MILLIS, drawFeather, FeatherInk, FeatherArt: Frontr draws its three dots)
+    val currentProgress by rememberUpdatedState(progress)
+    val clock = remember { Animatable(if (running) 0f else pullClock(currentProgress())) }
+    LaunchedEffect(running) {
+        if (running) {
+            // The infinite frame clock, as InfiniteTransition runs on: a test waiting for idle does not wait for it.
+            var last = withInfiniteAnimationFrameMillis { it }
+            while (true) {
+                val now = withInfiniteAnimationFrameMillis { it }
+                val next = clock.value + (now - last).toFloat() / TURN_MILLIS
+                clock.snapTo(if (next >= 1f) next - 1f else next)
+                last = now
+            }
+        } else {
+            // A gesture's progress is the clock's phase that gathers the dots as far.
+            snapshotFlow { pullClock(currentProgress()) }.collectLatest { clock.animateTo(it, tween(90, easing = LinearEasing)) }
+        }
+    }
 
-    /** Where each dot is and how large, in half sizes from the centre. */
-    fun dots(): List<Pair<Offset, Float>> = DOTS.map { (home, radius) ->
-        // Together halfway through the loop, apart at both ends.
-        val pull = if (running) (1f - cos(2f * PI.toFloat() * phase)) / 2f else progress().coerceIn(0f, 1f)
-        val at = home * (1f - pull * GATHER)
-        Offset(at.x * cos(angle) - at.y * sin(angle), at.x * sin(angle) + at.y * cos(angle)) to radius
+    /** Where each dot is and how large, in half sizes from the centre; read only while drawing. */
+    fun dots(): List<Pair<Offset, Float>> {
+        val time = clock.value
+        // Together halfway through each gathering, apart at both ends.
+        val pull = (1f - cos(2f * PI.toFloat() * ((time * GATHERINGS) % 1f))) / 2f
+        val angle = 2f * PI.toFloat() * time
+        return DOTS.map { (home, radius) ->
+            val at = home * (1f - pull * GATHER)
+            Offset(at.x * cos(angle) - at.y * sin(angle), at.x * sin(angle) + at.y * cos(angle)) to radius
+        }
     }
 
     Box(
@@ -158,5 +174,13 @@ private val DOTS = listOf(
 /** How far towards the centre the dots travel when fully gathered. */
 private const val GATHER = 0.8f
 private const val BLUR = 0.08f
-private const val LOOP_MILLIS = 1600
 private const val TURN_MILLIS = 4800
+private const val GATHERINGS = 3f
+
+/**
+ * The clock's value whose phase has the dots gathered by [progress] (0 apart, 1 together): acos(1 - 2p) / 2pi, over the
+ * gatherings. MTGA's `currentProgress() / 3f` for its feathers, here the inverse of the dots' own gathering curve.
+ * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/ui/component/LoadingMark.kt#LoadingMark
+ */
+private fun pullClock(progress: Float): Float =
+    acos(1f - 2f * progress.coerceIn(0f, 1f)) / (2f * PI.toFloat()) / GATHERINGS
