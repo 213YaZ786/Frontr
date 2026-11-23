@@ -91,7 +91,13 @@ data class Settings(
      * move in, or -1 until it is moved (then it sits above the dock).
      */
     val folderButtonX: Float = -1f,
-    val folderButtonY: Float = -1f
+    val folderButtonY: Float = -1f,
+    /**
+     * Where the Folders screen's new folder button was left, as a snap fraction of the page's movement bounds
+     * (see ui/component/MovableAction), or null until it is moved (then bottom right).
+     * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/settings/SettingsStore.kt#Settings
+     */
+    val foldersButtonSnap: Float? = null
 )
 
 /**

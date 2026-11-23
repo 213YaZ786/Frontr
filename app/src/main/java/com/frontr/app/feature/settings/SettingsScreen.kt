@@ -18,13 +18,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -36,8 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -60,7 +70,6 @@ import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.ui.component.ChoiceDialog
 import com.frontr.app.ui.component.FloatingFrame
 import com.frontr.app.ui.component.FloatingTop
-import com.frontr.app.ui.component.LargeTitle
 import com.frontr.app.ui.component.LocalDockPadding
 import com.frontr.app.ui.component.QuietButton
 import com.frontr.app.ui.component.SettingsActionTile
@@ -80,6 +89,7 @@ import com.frontr.app.ui.component.rememberHaptics
 import com.frontr.app.ui.icon.FrontrIcons
 import com.frontr.app.ui.theme.TEXT_SCALES
 import com.frontr.app.ui.theme.textScaleLabel
+import kotlin.math.roundToInt
 import org.koin.androidx.compose.koinViewModel
 
 private enum class OpenDialog { NONE, THEME, TEXT_SIZE, KEEP, FREQUENCY, CLEAR, START_TAB, AUTO_DOWNLOAD, UPDATES }
@@ -154,12 +164,18 @@ private fun keepLabel(days: Int): String = when (days) {
  * Every setting the former list of rows offered is a tile: appearance, media (Wi-Fi only, saving, playback), start tab,
  * Reddit links, background checks, notifications, keeping posts, saved posts, saved media, cached images, the
  * subreddits file, the activity log, updates and the about lines.
+ * The top row folds away going down and returns going up (the user, 2026-11-21), Material 3's enterAlwaysScrollBehavior
+ * (https://github.com/androidx/androidx/blob/androidx-main/compose/material3/material3/src/commonMain/kotlin/androidx/compose/material3/AppBar.kt),
+ * called as MTGA's SettingsScreen does: its nestedScrollConnection on a Box around the frame, its state.heightOffset
+ * read in the row's offset lambda, so no frame recomposes. The content's padding stays the header's resting height.
+ * not ported: xLinksOn, xLinksEnabled and the X dialogs of MTGA's SettingsScreen (X only; Frontr has Reddit links).
  */
 // not ported: UpdateSourceRow (the kit's ListItem row, its logic lives in the "self" tile below)
 // not ported: onOpenConnection and the "connection" tile (Frontr has no connection check screen to reach)
 // not ported: OpenDialog.COOKIES and the "cookies" tile (LinkedOut's browsing data, Frontr keeps no cookies to clear)
 // not ported: the "reads" tile (LinkedOut's one-host line, Frontr's About already says what it reads)
 // not ported: Section, SettingRow, SwitchRow (Frontr's former rows, the tiles replace them)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onOpenDebugLog: () -> Unit,
@@ -177,6 +193,8 @@ fun SettingsScreen(
     val haptics = rememberHaptics()
     // The guide's tile says how many steps are left, read from the system as the guide reads them.
     val setup = rememberSetupTiles()
+    val topBarScroll = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val statusTop = WindowInsets.statusBars.getTop(LocalDensity.current)
 
     // Changed in system settings, so read again each time the screen returns.
     var redditLinksOn by remember { mutableStateOf(redditLinksEnabled(context)) }
@@ -533,16 +551,29 @@ fun SettingsScreen(
         val dockRoom = if (wide && inset >= SideDockClearance) SideDockClearance else 0.dp
         val dockPadding = LocalDockPadding.current
         CompositionLocalProvider(LocalReadableInset provides if (wide) 0.dp else inset) {
-            Box(Modifier.fillMaxSize().padding(start = dockRoom)) {
+            Box(
+                Modifier.fillMaxSize().padding(start = dockRoom)
+                    .nestedScroll(topBarScroll.nestedScrollConnection)
+            ) {
                 FloatingFrame(
                     bottom = 0.dp,
                     scroll = if (wide) detailScroll else compactScroll,
-                    top = { FloatingTop("Settings") },
-                    largeTitle = LargeTitle("Settings")
+                    // The content runs whole under the window's top while the row folds.
+                    softEdge = false,
+                    // "Settings" small and centred on the top line, no large title: the sections start 16 dp under it.
+                    top = {
+                        Box(
+                            Modifier
+                                // The row and the status bar's height, so it leaves the window whole.
+                                .onSizeChanged { topBarScroll.state.heightOffsetLimit = -(it.height + statusTop).toFloat() }
+                                .offset { IntOffset(0, topBarScroll.state.heightOffset.roundToInt()) }
+                        ) { FloatingTop("Settings") }
+                    }
                 ) { padding ->
                     if (wide) {
                         SettingsListDetail(
-                            padding = padding,
+                            // SettingsListDetail adds its own 24 dp: 8 dp less in the header gives the 16.
+                            padding = PaddingValues(top = (padding.calculateTopPadding() - 8.dp).coerceAtLeast(0.dp)),
                             sections = SECTIONS,
                             section = section,
                             onSection = { sectionId = it.id },
@@ -559,7 +590,7 @@ fun SettingsScreen(
                                 .padding(horizontal = LocalReadableInset.current)
                         ) {
                             SettingsHeaderSpacer(padding)
-                            Spacer(Modifier.height(24.dp))
+                            Spacer(Modifier.height(16.dp))
                             SettingsFoldedSections(SECTIONS, open = openSection, onOpen = { openId = it?.id.orEmpty() }) { which ->
                                 val list: List<SettingsTile> = sectionTiles(which, tiles, actions)
                                 if (list.isNotEmpty()) SettingsTileGrid(list) { tileId = it.id }
@@ -697,7 +728,7 @@ private fun redditLinksEnabled(context: Context): Boolean {
 }
 
 /** Frontr's own notification page in Android settings. */
-private fun openNotificationSettings(context: Context) {
+internal fun openNotificationSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

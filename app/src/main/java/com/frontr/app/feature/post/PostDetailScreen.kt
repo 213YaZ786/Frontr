@@ -9,6 +9,9 @@ import com.frontr.app.ui.component.BoldButton
 import com.frontr.app.ui.component.QuietButton
 import com.frontr.app.navigation.LocalReadableInset
 import com.frontr.app.ui.component.FloatingTopBar
+import com.frontr.app.ui.component.BarTitle
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.frontr.app.ui.component.PostCard
 import com.frontr.app.core.common.present
 import com.frontr.app.core.common.AppError
@@ -104,13 +107,18 @@ fun PostDetailScreen(
 
     val post = state.post
 
+    // The bar folds away going down and returns going up, the list full screen.
+    // Port: https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/post/PostDetailScreen.kt#PostDetailScreen
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         // The page's ground is painted under the whole app, see MainActivity.
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             FloatingTopBar(
-                title = { Text("Post") },
+                scrollBehavior = scrollBehavior,
+                title = { BarTitle("Post") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(FrontrIcons.ArrowBack, contentDescription = "Back")

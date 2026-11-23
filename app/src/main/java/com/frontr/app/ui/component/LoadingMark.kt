@@ -55,6 +55,18 @@ fun LoadingMark(
     size: Dp = 32.dp,
     running: Boolean = true,
     progress: Float = 0f
+) = LoadingMark(modifier = modifier, size = size, running = running, progress = { progress })
+
+/**
+ * The same mark with [progress] read in the draw phase (a pull's distanceFraction, the ring's fill): a change redraws
+ * the dots without recomposing.
+ */
+@Composable
+fun LoadingMark(
+    modifier: Modifier = Modifier,
+    size: Dp = 32.dp,
+    running: Boolean = true,
+    progress: () -> Float
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
@@ -73,12 +85,12 @@ fun LoadingMark(
         animationSpec = infiniteRepeatable(tween(TURN_MILLIS, easing = LinearEasing), RepeatMode.Restart),
         label = "turn"
     )
-    // Together halfway through the loop, apart at both ends.
-    val pull = if (running) (1f - cos(2f * PI.toFloat() * phase)) / 2f else progress.coerceIn(0f, 1f)
     val angle = if (running) turn else 0f
 
     /** Where each dot is and how large, in half sizes from the centre. */
     fun dots(): List<Pair<Offset, Float>> = DOTS.map { (home, radius) ->
+        // Together halfway through the loop, apart at both ends.
+        val pull = if (running) (1f - cos(2f * PI.toFloat() * phase)) / 2f else progress().coerceIn(0f, 1f)
         val at = home * (1f - pull * GATHER)
         Offset(at.x * cos(angle) - at.y * sin(angle), at.x * sin(angle) + at.y * cos(angle)) to radius
     }

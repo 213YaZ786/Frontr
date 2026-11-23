@@ -11,7 +11,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
  * folder. A new name that differs only in case from an existing folder opens
  * that folder, see FolderNames.
  */
+// https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/ui/component/FolderDialog.kt#FolderDialog
+// not ported: Choice, Tick (MTGA's capsule rows with a tick; Frontr's GlassRadio rows stay as they are)
 @Composable
 fun FolderDialog(
     title: String,
@@ -42,7 +44,8 @@ fun FolderDialog(
     extras: List<String> = emptyList()
 ) {
     var creating by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
+    val nameState = rememberDialogNameState()
+    val name = nameState.text.toString()
 
     ZoneAlertDialog(
         onDismissRequest = onDismiss,
@@ -50,7 +53,8 @@ fun FolderDialog(
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (creating) {
                     // Folders have their own file, so emptying one does not
@@ -59,15 +63,10 @@ fun FolderDialog(
                         "An empty folder stays until you delete it in Subreddits, Folders.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
-                    TextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        singleLine = true,
-                        placeholder = { Text("Folder name") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    DialogNameField(nameState, "Folder name", onDone = { if (name.isNotBlank()) onSelect(name.trim()) })
                 } else {
                     everything?.let { Choice(it, selected == null) { onSelect(null) } }
                     folders.forEach { folder -> Choice(folder, selected == folder) { onSelect(folder) } }

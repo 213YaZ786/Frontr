@@ -3,10 +3,21 @@ package com.frontr.app.feature.timeline
 import com.frontr.app.data.marks.PostMarks
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Spacer
-import com.frontr.app.core.common.AppError
-import com.frontr.app.core.common.present
-import com.frontr.app.ui.component.ZoneAlertDialog
-import com.frontr.app.ui.component.QuietButton
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.frontr.app.data.accounts.AccountStore
+import com.frontr.app.ui.component.AppBarWithSearch
+import com.frontr.app.ui.component.BannerAction
+import com.frontr.app.ui.component.CapsuleMenuOffset
+import com.frontr.app.ui.component.DropdownMenuGroup
+import com.frontr.app.ui.component.FailureDialog
+import com.frontr.app.ui.component.FolderSwitch
+import com.frontr.app.ui.component.GlassMenu
+import com.frontr.app.ui.component.PullRevealBox
+import com.frontr.app.ui.component.ScrollUpButton
+import com.frontr.app.ui.component.SearchCapsuleHint
+import com.frontr.app.ui.component.SelectableDropdownMenuItem
 import androidx.compose.ui.graphics.Color
 import com.frontr.app.ui.glass.rememberGlassBackdrop
 import com.frontr.app.ui.glass.glassSource
@@ -16,7 +27,6 @@ import com.frontr.app.ui.component.ZoneSurface
 import com.frontr.app.ui.component.rememberRefreshHaptics
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.frontr.app.ui.component.LoadingMark
-import com.frontr.app.ui.component.PullIndicator
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.foundation.border
 import com.frontr.app.ui.component.EmptyZone
@@ -55,7 +65,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SmallFloatingActionButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -80,7 +89,6 @@ import com.frontr.app.core.media.MediaDownloader
 import com.frontr.app.data.settings.SettingsStore
 import com.frontr.app.core.model.Post
 import com.frontr.app.feature.media.MediaViewer
-import com.frontr.app.ui.component.FolderDialog
 import com.frontr.app.ui.component.PostCard
 import com.frontr.app.ui.component.relativeTime
 import com.frontr.app.ui.icon.FrontrIcons
@@ -144,9 +152,16 @@ fun TimelineScreen(
 
 
     var showFailures by remember { mutableStateOf(false) }
+    // The failure message names the network and where the fault likely lies. Frontr has no silent downloads state to add
+    // to it, so silentDownloads stays false.
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
+    // not ported: TimelineScreen's ChallengePill, solvableChallenge, verify and onOpenDiagnostics (X's challenge only)
     if (showFailures) {
         FailureDialog(
-            failed = state.errors.toList(),
+            failed = state.errors.values.toList(),
+            followed = state.followedCount,
+            silentDownloads = false,
+            site = "Reddit",
             onRetry = {
                 showFailures = false
                 viewModel.refresh()
@@ -155,34 +170,95 @@ fun TimelineScreen(
         )
     }
 
-    var choosingFolder by remember { mutableStateOf(false) }
-    if (choosingFolder) {
-        FolderDialog(
-            title = "Show on Home",
-            folders = state.folders,
-            selected = state.folder,
-            everything = "Every subreddit",
-            onSelect = { name ->
-                choosingFolder = false
-                // A name typed under New folder creates it, empty, and Home
-                // shows it so the reader sees where the next filing lands.
-                if (name == LIKED || name == ARCHIVED) {
-                    special = name
-                } else {
-                    special = null
-                    viewModel.showFolder(name?.let(viewModel::createFolder))
-                }
-            },
-            onDismiss = { choosingFolder = false },
-            extras = listOf(LIKED, ARCHIVED)
-        )
+    // The feed choice, in the capsule's start: the folder switch (folder icon, the feed's name and a chevron) opens a menu
+    // under it: All and the folders, then Liked and Archived, the shown one checked (Material 3 Expressive's grouped menu
+    // in glass, GlassMenu). Picking does what the folder dialog did.
+    // The capsule is an item of the list that records listBackdrop: it is drawn with no backdrop (AppBarWithSearch), and
+    // the menu lives in a window of its own.
+    var feedsOpen by remember { mutableStateOf(false) }
+    val showFeed: (String?) -> Unit = { name ->
+        feedsOpen = false
+        // Liked and Archived are views of the marks, not folders. Any other name is a folder that exists already.
+        if (name == LIKED || name == ARCHIVED) {
+            special = name
+        } else {
+            special = null
+            viewModel.showFolder(name)
+        }
     }
-    // Offered once the reader has made a folder. With Main alone there is
-    // nothing to choose, and the title stays a title.
-    val chooseFolder: (() -> Unit)? = if (state.folders.size > 1 || special != null || marked.liked.isNotEmpty() || marked.archived.isNotEmpty()) {
-        { choosingFolder = true }
-    } else {
-        null
+    // Each folder row with its count of subreddits (Gmail's labels), from the followed list.
+    // not ported: TimelineScreen's feedPill and LocalBannerProbe (the capsule's folder switch takes its place everywhere,
+    // nobody followed included, as the draft shows), NavigationDrawerItem (SelectableDropdownMenuItem carries its count)
+    val followed by koinInject<AccountStore>().accounts.collectAsState()
+    val feedMenu: @Composable () -> Unit = {
+        // contentOffset: the menu opens 8 dp under the capsule, not on its edge (requests point 18; MTGA has none).
+        GlassMenu(expanded = feedsOpen, onDismissRequest = { feedsOpen = false }, contentOffset = CapsuleMenuOffset) {
+            // No Clear row: a feed is chosen, not cleared.
+            DropdownMenuGroup(index = 0, count = 2) {
+                SelectableDropdownMenuItem(selected = state.folder == null, onClick = { showFeed(null) }, text = "All", count = followed.size)
+                state.folders.forEach { name ->
+                    SelectableDropdownMenuItem(
+                        selected = state.folder == name,
+                        onClick = { showFeed(name) },
+                        text = name,
+                        count = followed.count { it.folder == name }
+                    )
+                }
+            }
+            DropdownMenuGroup(index = 1, count = 2) {
+                listOf(LIKED, ARCHIVED).forEach { name ->
+                    SelectableDropdownMenuItem(selected = state.folder == name, onClick = { showFeed(name) }, text = name)
+                }
+            }
+        }
+    }
+    // The capsule's navigation icon: the folder switch with the same menu, one composition.
+    val feedSwitch: @Composable () -> Unit = {
+        Box(Modifier.semantics { heading(); contentDescription = "Home" }) {
+            Box {
+                FolderSwitch(
+                    icon = FrontrIcons.Folder,
+                    trailingIcon = FrontrIcons.ExpandMore,
+                    label = state.folder ?: "All",
+                    expanded = feedsOpen,
+                    onClick = { feedsOpen = true }
+                )
+                feedMenu()
+            }
+        }
+    }
+
+    // https://github.com/androidx/androidx/blob/androidx-main/compose/animation/animation/samples/src/main/java/androidx/compose/animation/samples/AnimatedVisibilitySamples.kt#AnimatedVisibilityWithBooleanVisibleParamNoReceiver
+    // The alert pops in and out (scale and fade) as the failures come and go.
+    // not ported: AnimatedVisibilityWithBooleanVisibleParamNoReceiver's Box, its fixed size, background and the toggle
+    // button around the visible flag
+    val alert: (@Composable () -> Unit) = {
+        AnimatedVisibility(
+            visible = state.errors.isNotEmpty(),
+            enter = scaleIn() + fadeIn(),
+            exit = scaleOut() + fadeOut()
+        ) {
+            BannerAction(
+                icon = FrontrIcons.Warning,
+                label = "What went wrong",
+                onClick = { showFailures = true },
+                container = MaterialTheme.colorScheme.errorContainer,
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+    val banner: @Composable () -> Unit = {
+        // One glass capsule, nothing under it: the folder switch, "Search", the alert on a failure only. Nobody followed:
+        // the same capsule, the folder switch "All" and its menu (requests point 3).
+        // https://github.com/androidx/androidx/blob/androidx-main/compose/material3/material3/src/commonMain/kotlin/androidx/compose/material3/SearchBar.kt#AppBarWithSearch
+        // not ported: AppBarWithSearch itself (the kit's AppBarWithSearch, ui/component/FeedBanner.kt, is called as it is)
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            AppBarWithSearch(
+                inputField = { SearchCapsuleHint(FrontrIcons.Search, listOf("Search"), onOpenSearch) },
+                navigationIcon = feedSwitch,
+                actions = { alert() }
+            )
+        }
     }
 
     // A post is read once it has gone past the top of the screen. Everything
@@ -204,6 +280,10 @@ fun TimelineScreen(
     // to bend it.
     val look = LocalGlass.current
     val listBackdrop = rememberGlassBackdrop()
+    // The pull's ring fills with the subreddits the refresh has finished; the count shows once it is known.
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
+    val refreshProgress: () -> Float = { state.refreshFill }
+    val refreshCount = if (state.refreshTotal > 0) state.refreshDone to state.refreshTotal else null
     // The page's ground is painted under the whole app, see MainActivity.
     Scaffold(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) { padding ->
         CompositionLocalProvider(LocalGlassBackdrop provides listBackdrop.takeIf { look != null }) {
@@ -211,17 +291,25 @@ fun TimelineScreen(
         // Home is empty, failed or full, and whatever the scroll position.
         Box(Modifier.fillMaxSize()) {
         when {
-            state.followedCount == 0 -> EmptyState(
-                title = "Nothing followed yet",
-                message = "Follow a few subreddits and they will all appear here, on one front page.",
-                actionLabel = "Open Subreddits",
-                onAction = onOpenAccounts,
-                modifier = Modifier.padding(padding)
-            )
+            state.followedCount == 0 -> Column(
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = LocalReadableInset.current)
+            ) {
+                banner()
+                // The weight gives it the rest of the screen, so it sits in the middle of what is left under the
+                // banner rather than against it.
+                EmptyState(
+                    title = "Nothing followed yet",
+                    message = "Follow a few subreddits and they will all appear here, on one front page.",
+                    actionLabel = "Open Subreddits",
+                    onAction = onOpenAccounts,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             // Pull works here too, so a failed refresh at launch does not
             // leave Home stuck until a restart.
-            state.isEmpty && state.errors.isNotEmpty() -> PullToRefreshBox(
+            // The list pulled down uncovers the mark, under the status bar, where the list starts.
+            state.isEmpty && state.errors.isNotEmpty() -> PullRevealBox(
                 isRefreshing = state.loading,
                 onRefresh = {
                     askedRefresh()
@@ -229,30 +317,24 @@ fun TimelineScreen(
                 },
                 modifier = Modifier.fillMaxSize(),
                 state = pull,
-                // Under the status bar, where the list starts, not behind it.
-                indicator = {
-                    PullIndicator(
-                        state = pull,
-                        isRefreshing = state.loading,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
-                    )
-                }
+                progress = refreshProgress,
+                count = refreshCount,
+                countLabel = "subreddits",
+                lastUpdated = subtitle(state)
             ) {
                 // A list, because the pull gesture needs something scrollable.
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = LocalDockPadding.current)
+                    contentPadding = PaddingValues(
+                        start = LocalReadableInset.current,
+                        end = LocalReadableInset.current,
+                        top = padding.calculateTopPadding(),
+                        bottom = LocalDockPadding.current
+                    )
                 ) {
-                    // The header stays, so a folder whose accounts all failed
+                    // The banner stays, so a folder whose subreddits all failed
                     // is not a dead end: the reader can still switch away.
-                    item(key = "home-header") {
-                        HomeHeader(
-                            state = state,
-                            onOpenSearch = onOpenSearch,
-                            onShowFailures = { showFailures = true },
-                            onChooseFolder = chooseFolder
-                        )
-                    }
+                    item(key = "home-header") { banner() }
                     item(key = "nothing") {
                         EmptyState(
                             title = "Nothing could be loaded",
@@ -265,7 +347,7 @@ fun TimelineScreen(
                 }
             }
 
-            else -> PullToRefreshBox(
+            else -> PullRevealBox(
                 isRefreshing = state.loading,
                 onRefresh = {
                     askedRefresh()
@@ -273,14 +355,10 @@ fun TimelineScreen(
                 },
                 modifier = Modifier.fillMaxSize(),
                 state = pull,
-                // Under the status bar, where the list starts, not behind it.
-                indicator = {
-                    PullIndicator(
-                        state = pull,
-                        isRefreshing = state.loading,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
-                    )
-                }
+                progress = refreshProgress,
+                count = refreshCount,
+                countLabel = "subreddits",
+                lastUpdated = subtitle(state)
             ) {
                 // Prefetch a page before the reader actually hits the bottom,
                 // so scrolling stays continuous instead of stalling.
@@ -328,14 +406,7 @@ fun TimelineScreen(
                     ),
                     modifier = Modifier.fillMaxSize().then(if (look != null) Modifier.glassSource(listBackdrop, look) else Modifier)
                 ) {
-                    item(key = "home-header") {
-                        HomeHeader(
-                            state = state,
-                            onOpenSearch = onOpenSearch,
-                            onShowFailures = { showFailures = true },
-                            onChooseFolder = chooseFolder
-                        )
-                    }
+                    item(key = "home-header") { banner() }
 
                     if (state.posts.isEmpty() && !state.loading && state.folder != null) {
                         item(key = "folder-empty") {
@@ -374,20 +445,19 @@ fun TimelineScreen(
                 }
                 }
 
-                // The folder switch never leaves: it is how the reader moves
-                // from one stream to another, and a control that only appears
-                // once you have scrolled is a control nobody finds. The way
-                // back to the top stacks with it, and only once the way back
-                // is a real chore.
+                // The way back to the top shows only once it is a real chore.
+                // The feed is chosen from the banner now, so nothing stacks with it.
+                // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
                 val showBackToTop by remember {
                     derivedStateOf { listState.firstVisibleItemIndex >= BACK_TO_TOP_AFTER }
                 }
-                FolderButton(
-                    folderIcon = FrontrIcons.Folder,
-                    upIcon = FrontrIcons.ArrowUp,
-                    onClick = { choosingFolder = true },
-                    showBackToTop = showBackToTop,
-                    onBackToTop = { scope.launch { listState.animateScrollToItem(0) } }
+                ScrollUpButton(
+                    visible = showBackToTop,
+                    icon = FrontrIcons.ArrowUp,
+                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp + LocalReadableInset.current, bottom = LocalDockPadding.current + 16.dp)
                 )
             }
         }
@@ -396,116 +466,13 @@ fun TimelineScreen(
     }
 }
 
-/**
- * Home's title, its freshness line and its two actions, as the first zone of
- * the list. Centred, because a title is data and not a row of a list.
- *
- * The actions sit on the title's own line and the freshness line runs under
- * them, so a long "Updated an hour ago" never has to fight the icons for room.
- */
-@Composable
-private fun HomeHeader(
-    state: TimelineUiState,
-    onOpenSearch: () -> Unit,
-    onShowFailures: () -> Unit,
-    /** Null until the reader has made a folder, see TimelineScreen. */
-    onChooseFolder: (() -> Unit)?
-) {
-    ZoneSurface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val failing = state.errors.isNotEmpty()
-            if (state.followedCount > 0) {
-                // Shown only when an account failed to load, the one thing
-                // here that needs noticing; a blank of the same width keeps
-                // the title centred otherwise.
-                if (failing) {
-                    BoldIconButton(
-                        onClick = onShowFailures,
-                        modifier = Modifier.size(BUTTON_SIZE),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        edge = MaterialTheme.colorScheme.error
-                    ) {
-                        Icon(FrontrIcons.Pulse, contentDescription = "What went wrong", modifier = Modifier.size(ICON_SIZE))
-                    }
-                } else {
-                    Spacer(Modifier.size(BUTTON_SIZE))
-                }
-            }
-
-            // The two buttons are the same width, so the title lands on the
-            // centre of the zone without being measured against them.
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .then(
-                        if (onChooseFolder != null) {
-                            Modifier.clickable(onClickLabel = "Choose which folder to show", onClick = onChooseFolder)
-                        } else {
-                            Modifier
-                        }
-                    )
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (onChooseFolder == null) {
-                    Text("Home", style = MaterialTheme.typography.titleLarge)
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            state.folder ?: "Home",
-                            style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Icon(
-                            FrontrIcons.ArrowDown,
-                            contentDescription = null,
-                            modifier = Modifier.padding(start = 4.dp).size(20.dp)
-                        )
-                    }
-                }
-                subtitle(state)?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (state.followedCount > 0) {
-                BoldIconButton(
-                    onClick = onOpenSearch,
-                    modifier = Modifier.size(BUTTON_SIZE)
-                ) {
-                    Icon(
-                        FrontrIcons.Search,
-                        contentDescription = "Search saved posts",
-                        modifier = Modifier.size(ICON_SIZE)
-                    )
-                }
-            }
-        }
-    }
-}
-
+// The age the pull shows in its ring before release (PullRevealBox's lastUpdated, "Updated" over "3m ago"); null while
+// loading or when nothing was read yet. Was the banner's subtitle, now in the pull.
+// https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
 private fun subtitle(state: TimelineUiState): String? = when {
     state.followedCount == 0 -> null
-    state.loading -> "Updating"
-    state.lastUpdatedMillis != null -> relativeTime(state.lastUpdatedMillis).let { age ->
-        if (age.isEmpty() || age == "now") "Updated just now" else "Updated $age ago"
-    }
+    state.loading -> null
+    state.lastUpdatedMillis != null -> relativeTime(state.lastUpdatedMillis)
     else -> null
 }
 
@@ -537,14 +504,6 @@ private fun TimelineFooter(state: TimelineUiState, onLoadMore: () -> Unit) {
     }
 }
 
-/**
- * Matched to the dock at the bottom: its slots are 48 dp across and its icons
- * are Material's default 24 dp. Two controls of the same app should not be two
- * different sizes.
- */
-private val BUTTON_SIZE = 48.dp
-private val ICON_SIZE = 24.dp
-
 private const val LOAD_MORE_THRESHOLD = 5
 
 /** Posts scrolled past before the way back becomes worth a button. */
@@ -568,47 +527,6 @@ private fun EmptyState(
         modifier = modifier.fillMaxSize()
     )
 }
-
-/**
- * What went wrong, in words, and the one thing that helps: which accounts
- * could not be updated and why. Their saved posts stay in the stream.
- */
-@Composable
-private fun FailureDialog(
-    failed: List<Pair<String, AppError>>,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ZoneAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (failed.size == 1) "1 subreddit could not be updated" else "${failed.size} subreddits could not be updated") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                failed.take(FAILURES_SHOWN).forEach { (handle, error) ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("r/$handle", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            error.present().explanation,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                if (failed.size > FAILURES_SHOWN) {
-                    Text(
-                        "and ${failed.size - FAILURES_SHOWN} more",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        confirmButton = { QuietButton(onClick = onRetry) { Text("Try again") } },
-        dismissButton = { QuietButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-private const val FAILURES_SHOWN = 5
 
 private const val LIKED = "Liked"
 private const val ARCHIVED = "Archived"

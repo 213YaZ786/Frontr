@@ -63,17 +63,29 @@ class TimelineRepository(
      * a single surviving instance is the fastest way to get rate limited, and
      * the pool's backoff would then punish every later read.
      */
-    suspend fun refresh(only: Set<String>? = null, folder: String? = null): Merged = coroutineScope {
+    // [onProgress] is called with the subreddits finished and the total, once at 0 and after each loadFeed, as MTGA's.
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/repository/TimelineRepository.kt#refresh
+    // not ported: onHeads and the heads phase (loadHead, useXcomDirect: x.com only), the `accounts` argument of onProgress
+    // (one step per subreddit, so done and total already count subreddits), headOk, keepPaging (X's paging by post ids)
+    suspend fun refresh(
+        only: Set<String>? = null,
+        folder: String? = null,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): Merged = coroutineScope {
         val handles = handlesIn(folder)
         if (handles.isEmpty()) return@coroutineScope Merged()
 
         val targets = if (only == null) handles else handles.filter { it.lowercase() in only }
 
         val gate = Semaphore(MAX_PARALLEL_FETCHES)
+        // One step per subreddit.
+        val total = targets.size
+        val finished = java.util.concurrent.atomic.AtomicInteger(0)
+        onProgress(0, total)
 
         val results = targets.map { handle ->
             async {
-                gate.withPermit { handle to feeds.loadFeed(handle) }
+                gate.withPermit { (handle to feeds.loadFeed(handle)).also { onProgress(finished.incrementAndGet(), total) } }
             }
         }.map { it.await() }
 

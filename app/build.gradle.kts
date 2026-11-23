@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.navigation.compose)
+    // LinkSheet's harmonized Caution colour (com.materialkolor.blend.Blend).
+    implementation(libs.materialkolor.utilities)
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.koin.android)
