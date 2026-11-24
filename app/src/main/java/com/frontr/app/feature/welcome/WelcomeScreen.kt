@@ -60,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -73,6 +74,7 @@ import com.frontr.app.data.accounts.AccountStore
 import com.frontr.app.data.settings.AutoDownload
 import com.frontr.app.data.settings.Settings
 import com.frontr.app.data.settings.SettingsStore
+import com.frontr.app.feature.settings.RefreshDialog
 import com.frontr.app.feature.settings.SettingsIcons
 import com.frontr.app.feature.settings.SettingsViewModel
 import com.frontr.app.sync.NewPostNotifier
@@ -251,6 +253,23 @@ private fun rememberSetup(): Setup {
                 }
             }
         ),
+        // The Refresh at launch tile, ported from rememberSetupTiles of MTGA (its "refresh" tile): the stop as its state, the
+        // same RefreshDialog as Settings, the value written to the same setting.
+        // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/welcome/WelcomeScreen.kt#rememberSetupTiles
+        SetupTile(
+            id = "refresh", name = "Refresh at launch", title = "Refresh at launch", icon = SettingsIcons.Timer,
+            state = current.launchRefresh.tile,
+            summary = "When the app opens, a feed is read again once its last read is older than this. Tap to choose.",
+            done = true, required = false,
+            onClick = { choosing = "refresh" },
+            menu = {
+                if (choosing == "refresh") RefreshDialog(
+                    selected = current.launchRefresh,
+                    onPick = sync::setSyncFrequency,
+                    onDismiss = { choosing = "" }
+                )
+            }
+        ),
         SetupTile(
             id = "updates", name = "Updates", title = "Updates", icon = SettingsIcons.Update,
             state = when {
@@ -309,7 +328,13 @@ private fun updatesLabel(mode: UpdateMode): String = when (mode) {
  * https://github.com/florisboard/florisboard/blob/main/app/src/main/kotlin/dev/patrickgold/florisboard/app/setup/SetupScreen.kt#SetupScreen
  */
 @Composable
-fun WelcomeScreen(onFinish: (openAccounts: Boolean) -> Unit) {
+fun WelcomeScreen(
+    onFinish: (openAccounts: Boolean) -> Unit,
+    // Start (Done) with whether Subreddits opens and the button's centre in root coordinates, for the reveal. The tiles
+    // keep onFinish.
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/welcome/WelcomeScreen.kt#WelcomeScreen
+    onStart: (openAccounts: Boolean, origin: Offset) -> Unit = { openAccounts, _ -> onFinish(openAccounts) }
+) {
     val store: SettingsStore = koinInject()
     val followed: AccountStore = koinInject()
     // Read once: closing the guide sets welcomeSeen, and the button must not turn to Done while it leaves.
@@ -321,7 +346,7 @@ fun WelcomeScreen(onFinish: (openAccounts: Boolean) -> Unit) {
     val close = { setup.dialog.value = OpenDialog.NONE }
 
     // Start lands on Subreddits while nobody is followed, where a name is typed (the old guide's last Next).
-    WelcomeContent(steps, reopened, onStart = { onFinish(followed.accounts.value.isEmpty()) }) { explained = it.id }
+    WelcomeContent(steps, reopened, onStart = { origin -> onStart(followed.accounts.value.isEmpty(), origin) }) { explained = it.id }
 
     steps.firstOrNull { it.id == explained }?.let { tile ->
         SetupTileDialog(tile, onDismiss = { explained = "" })
@@ -359,7 +384,7 @@ fun WelcomeScreen(onFinish: (openAccounts: Boolean) -> Unit) {
  * is required, the round StartCookie is the one button).
  */
 @Composable
-internal fun WelcomeContent(tiles: List<SetupTile>, reopened: Boolean, onStart: () -> Unit, onExplain: (SetupTile) -> Unit = {}) {
+internal fun WelcomeContent(tiles: List<SetupTile>, reopened: Boolean, onStart: (origin: Offset) -> Unit, onExplain: (SetupTile) -> Unit = {}) {
     val steps = tiles
     // WhatsNewView's body: the scrolling content is a block centred in the window when shorter than it (the viewport is
     // the minimum height of the block). Drawn over the whole window, so it keeps clear of the system bars itself.

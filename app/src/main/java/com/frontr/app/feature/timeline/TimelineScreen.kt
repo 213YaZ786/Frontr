@@ -96,7 +96,6 @@ import com.frontr.app.data.settings.SettingsStore
 import com.frontr.app.core.model.Post
 import com.frontr.app.feature.media.MediaViewer
 import com.frontr.app.ui.component.PostCard
-import com.frontr.app.ui.component.relativeTime
 import com.frontr.app.ui.icon.FrontrIcons
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -286,10 +285,6 @@ fun TimelineScreen(
     // to bend it.
     val look = LocalGlass.current
     val listBackdrop = rememberGlassBackdrop()
-    // The pull's ring fills with the subreddits the refresh has finished; the count shows once it is known.
-    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
-    val refreshProgress: () -> Float = { state.refreshFill }
-    val refreshCount = if (state.refreshTotal > 0) state.refreshDone to state.refreshTotal else null
     // The page's ground is painted under the whole app, see MainActivity.
     Scaffold(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) { padding ->
         CompositionLocalProvider(LocalGlassBackdrop provides listBackdrop.takeIf { look != null }) {
@@ -322,11 +317,7 @@ fun TimelineScreen(
                     viewModel.refresh()
                 },
                 modifier = Modifier.fillMaxSize(),
-                state = pull,
-                progress = refreshProgress,
-                count = refreshCount,
-                countLabel = "subreddits",
-                lastUpdated = subtitle(state)
+                state = pull
             ) {
                 // A list, because the pull gesture needs something scrollable.
                 LazyColumn(
@@ -360,11 +351,7 @@ fun TimelineScreen(
                     viewModel.refresh()
                 },
                 modifier = Modifier.fillMaxSize(),
-                state = pull,
-                progress = refreshProgress,
-                count = refreshCount,
-                countLabel = "subreddits",
-                lastUpdated = subtitle(state)
+                state = pull
             ) {
                 // Prefetch a page before the reader actually hits the bottom,
                 // so scrolling stays continuous instead of stalling.
@@ -475,16 +462,6 @@ fun TimelineScreen(
         }
         }
     }
-}
-
-// The age the pull shows in its ring before release (PullRevealBox's lastUpdated, "Updated" over "3m ago"); null while
-// loading or when nothing was read yet. Was the banner's subtitle, now in the pull.
-// https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineScreen.kt#TimelineScreen
-private fun subtitle(state: TimelineUiState): String? = when {
-    state.followedCount == 0 -> null
-    state.loading -> null
-    state.lastUpdatedMillis != null -> relativeTime(state.lastUpdatedMillis)
-    else -> null
 }
 
 private enum class FooterKind { Loading, Failed, More, End }

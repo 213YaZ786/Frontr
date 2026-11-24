@@ -17,6 +17,7 @@ import com.frontr.app.data.settings.SettingsStore
 import com.frontr.app.data.settings.StartTab
 import com.frontr.app.data.settings.ThemeMode
 import com.frontr.app.sync.SyncWorker
+import com.frontr.app.ui.component.SyncFrequency
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -162,6 +163,11 @@ class SettingsViewModel(
 
 
     fun setStartTab(tab: StartTab) = store.update { it.copy(startTab = tab) }
+
+    // As Feeder's setSyncFrequency stores the choice (not ported: its schedulePeriodicRssSync, nothing runs in the background):
+    // https://github.com/spacecowboy/Feeder/blob/master/app/src/main/java/com/nononsenseapps/feeder/archmodel/SettingsStore.kt#setSyncFrequency
+    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/settings/SettingsViewModel.kt#setSyncFrequency
+    fun setSyncFrequency(value: SyncFrequency) = store.update { it.copy(launchRefresh = value) }
 
 
     fun setBackgroundSync(enabled: Boolean) {

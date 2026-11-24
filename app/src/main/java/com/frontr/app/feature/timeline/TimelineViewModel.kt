@@ -6,13 +6,14 @@ import com.frontr.app.core.common.AppError
 import com.frontr.app.core.media.AutoMediaDownloader
 import com.frontr.app.core.model.Post
 import com.frontr.app.data.accounts.AccountStore
+import com.frontr.app.data.cache.FeedCache
 import com.frontr.app.data.read.ReadMarks
 import com.frontr.app.data.repository.TimelineRepository
 import com.frontr.app.data.settings.SettingsStore
+import com.frontr.app.ui.component.feedsToSync
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,12 +36,6 @@ data class TimelineUiState(
     val folder: String? = null,
     /** Every folder, Main first. One entry means the reader has made none. */
     val folders: List<String> = emptyList(),
-    // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineViewModel.kt#TimelineViewModel
-    /** Subreddits the running refresh has finished, and how many it reads; 0 of 0 when none runs. */
-    val refreshDone: Int = 0,
-    val refreshTotal: Int = 0,
-    /** How full the ring is, 0 to 1: the subreddits finished over all of them (one step each). */
-    val refreshFill: Float = 0f,
 ) {
     val isEmpty: Boolean get() = posts.isEmpty() && !loading
 }
@@ -50,7 +45,8 @@ class TimelineViewModel(
     private val accounts: AccountStore,
     private val settings: SettingsStore,
     private val autoDownloader: AutoMediaDownloader,
-    private val readMarks: ReadMarks
+    private val readMarks: ReadMarks,
+    private val feedCache: FeedCache
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TimelineUiState())
@@ -97,7 +93,7 @@ class TimelineViewModel(
         viewModelScope.launch {
             // Paint from disk first so the timeline is readable before any
             // request goes out, then refresh over the top.
-            work.withLock {
+            val due = work.withLock {
                 known = followedKeys()
                 filed = filedIn()
                 asked = askedOf()
@@ -110,8 +106,23 @@ class TimelineViewModel(
                     folder = folder,
                     folders = accounts.folders.value
                 )
+                // Feeder's feedsToSync with a staleTime: only the subreddits whose last read is older than the chosen
+                // age are read, a subreddit never read always. Each read time comes from the subreddit's cached feed.
+                // https://github.com/spacecowboy/Feeder/blob/master/app/src/main/java/com/nononsenseapps/feeder/model/RssLocalSync.kt#feedsToSync
+                // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineViewModel.kt#TimelineViewModel
+                // not ported: the feedId and tag branches, syncLoadFeedsIfStale (see ui/component/LaunchRefresh.kt)
+                feedsToSync(
+                    fetchedAt = known.associateWith { feedCache.read(it)?.fetchedAtMillis },
+                    frequency = settings.current.launchRefresh,
+                    now = System.currentTimeMillis()
+                )
             }
-            refresh(everything = true)
+            if (due.isEmpty()) {
+                // Nothing is due: no request goes out, and a folder switch reads nothing, as after a full pass.
+                work.withLock { everythingFetched = true }
+            } else {
+                refresh(everything = true, only = due)
+            }
         }
 
         // Home follows the list live, so an account followed later shows
@@ -135,7 +146,7 @@ class TimelineViewModel(
      * requests. A pull reads the folder on screen, which is what was asked
      * for, at a lower cost to hosts that are already rate limiting.
      */
-    fun refresh(everything: Boolean = false) {
+    fun refresh(everything: Boolean = false, only: Set<String>? = null) {
         if (_state.value.loading || fullRefreshQueued) return
         fullRefreshQueued = true
         viewModelScope.launch {
@@ -143,7 +154,7 @@ class TimelineViewModel(
                 fullRefreshQueued = false
                 known = followedKeys()
                 filed = filedIn()
-                fetch(only = null, everything = everything)
+                fetch(only = only, everything = everything)
             }
         }
     }
@@ -237,38 +248,26 @@ class TimelineViewModel(
         _state.value = before.copy(loading = true, followedCount = known.size)
         val asked = folder
 
-        // The subreddits finished, reported from the fetching coroutines: the count goes in the state for the pull's ring.
-        // One step per subreddit, so the text and the ring's fill count the same thing.
-        // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/timeline/TimelineViewModel.kt#TimelineViewModel
-        // not ported: paintHeads (x.com's heads, Reddit has one source), fillGaps and the archives, ChallengeSolver and verify (X only)
-        val onProgress: (Int, Int) -> Unit = { done, total ->
-            _state.update {
-                it.copy(
-                    refreshDone = done,
-                    refreshTotal = total,
-                    refreshFill = if (total > 0) done.toFloat() / total else 0f
-                )
-            }
-        }
-
         val network = if (everything && only == null && asked != null) {
             // Two steps when a folder is on screen: its accounts first, painted
             // as soon as they are in, then everyone else. One pass over every
             // account left the reader looking at stale posts until the last
             // account of the last folder had answered.
-            val shown = repository.refresh(null, asked, onProgress)
+            val shown = repository.refresh(null, asked)
             if (folder == asked) _state.value = _state.value.copy(posts = shown.posts, errors = shown.errors)
             val inShown = accounts.accounts.value.filter { it.folder == asked }.map { it.handle.lowercase() }.toSet()
             val rest = known - inShown
-            val others = if (rest.isEmpty()) repository.cached(null) else repository.refresh(rest, null, onProgress)
+            val others = if (rest.isEmpty()) repository.cached(null) else repository.refresh(rest, null)
             others.copy(
                 errors = shown.errors + others.errors,
                 oldestFetchedAtMillis = listOfNotNull(shown.oldestFetchedAtMillis, others.oldestFetchedAtMillis).minOrNull()
             )
         } else {
-            repository.refresh(only, if (everything) null else asked, onProgress)
+            repository.refresh(only, if (everything) null else asked)
         }
-        if (everything && only == null) everythingFetched = true
+        // The launch's pass reads only the subreddits that are due, the others are fresh enough: it still counts as the
+        // pass over everything, so a folder switch reads nothing.
+        if (everything) everythingFetched = true
         // A subreddit read again can bring posts published before the previous
         // visit: they fill a gap, they are not new.
         // https://github.com/213YaZ786/LinkedOut/blob/main/app/src/main/java/com/linkedout/app/feature/timeline/TimelineViewModel.kt#fetch
@@ -296,9 +295,6 @@ class TimelineViewModel(
         _state.value = _state.value.copy(
             posts = merged.posts,
             loading = false,
-            refreshDone = 0,
-            refreshTotal = 0,
-            refreshFill = 0f,
             errors = errors,
             followedCount = known.size,
             lastUpdatedMillis = lastUpdated,

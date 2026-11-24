@@ -3,6 +3,8 @@ package com.frontr.app.data.settings
 import com.frontr.app.core.update.UpdateMode
 import android.content.Context
 import com.frontr.app.core.common.writeTextAtomically
+import com.frontr.app.ui.component.SyncFrequency
+import com.frontr.app.ui.component.defaultSyncFrequency
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,7 +99,13 @@ data class Settings(
      * (see ui/component/MovableAction), or null until it is moved (then bottom right).
      * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/settings/SettingsStore.kt#Settings
      */
-    val foldersButtonSnap: Float? = null
+    val foldersButtonSnap: Float? = null,
+    /**
+     * How old a subreddit's last read may be at launch before it is read again (reader kit LaunchRefresh), saved by
+     * name. An unknown name in the file falls back to the default (coerceInputValues in the store's Json).
+     * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/settings/SettingsStore.kt#Settings
+     */
+    val launchRefresh: SyncFrequency = defaultSyncFrequency
 )
 
 /**
@@ -107,7 +115,7 @@ data class Settings(
 class SettingsStore(context: Context) {
 
     private val file = File(context.filesDir, "settings.json")
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; coerceInputValues = true }
 
     private val _settings = MutableStateFlow(load())
     val settings: StateFlow<Settings> = _settings.asStateFlow()

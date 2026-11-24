@@ -159,13 +159,13 @@ fun FeedScreen(
             keyOf = { it.id },
             paused = viewing != null
         )
-        // Every load (the first one, a retry, the pull) shows the ring of feathers over the blurred list. Frontr reads
-        // one source per sub, so nothing is counted: progress is null and the ring runs on its own.
+        // Every load (the first one, a retry, the pull) shows the app's mark falling over the list, nothing counted.
+        // https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/feature/feed/FeedScreen.kt#FeedScreen
+        // not ported: MTGA's ChallengePill (X only)
         PullRevealBox(
             isRefreshing = state.loading,
             onRefresh = viewModel::refresh,
-            modifier = Modifier.fillMaxSize(),
-            progress = null
+            modifier = Modifier.fillMaxSize()
         ) {
         CompositionLocalProvider(LocalInlinePlaying provides inline) {
         LazyColumn(
