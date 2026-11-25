@@ -37,7 +37,9 @@ import androidx.compose.foundation.text.input.maxLength
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
@@ -61,11 +63,15 @@ fun ZoneAlertDialog(
     confirmButton: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     dismissButton: (@Composable () -> Unit)? = null,
+    // AlertController's third button (BUTTON_NEUTRAL, setupButtons): none by default, so a dialog that does not pass it is unchanged.
+    neutralButton: (@Composable () -> Unit)? = null,
     icon: (@Composable () -> Unit)? = null,
     title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
     shape: Shape = AlertDialogDefaults.shape,
-    properties: DialogProperties = DialogProperties()
+    properties: DialogProperties = DialogProperties(),
+    // A dangerous confirmation (delete, keys, invite): its window drops touches while another app's window covers it.
+    refuseObscuredTaps: Boolean = false
 ) {
     val glass = LocalGlass.current
     val blur = rememberCrossWindowBlur()
@@ -80,9 +86,23 @@ fun ZoneAlertDialog(
         properties = properties
     ) {
         if (glass != null) BlurBehind(blur = blur)
+        // Defense in depth against tapjacking, as Super Productivity's WebViewBlockActivity sets it on each of its dialogs
+        // (dialog.window?.decorView?.filterTouchesWhenObscured = true): the dialog's window drops a touch while another app's window covers it.
+        // https://raw.githubusercontent.com/super-productivity/super-productivity/master/android/app/src/main/java/com/superproductivity/superproductivity/webview/WebViewBlockActivity.kt#WebViewBlockActivity
+        // not ported: onCreate's layout, insets and texts (a native screen, not a dialog), showOpenWebViewConfirmation,
+        // showOpenWebViewAppInfoConfirmation, showOverrideConfirmation (its own dialogs: ours are ZoneAlertDialog), relaunchApp, present (the WebView check's own flow)
+        val dialog = LocalView.current
+        DisposableEffect(dialog, refuseObscuredTaps) {
+            val window = dialog.rootView
+            val decorView = window
+            val filterTouchesWhenObscured = decorView.filterTouchesWhenObscured
+            if (refuseObscuredTaps) decorView.filterTouchesWhenObscured = true
+            onDispose { decorView.filterTouchesWhenObscured = filterTouchesWhenObscured }
+        }
         ZoneAlertContent(
             confirmButton = confirmButton,
             dismissButton = dismissButton,
+            neutralButton = neutralButton,
             icon = icon,
             title = title,
             text = text,
@@ -110,6 +130,7 @@ fun ZoneAlertDialog(
 private fun ZoneAlertContent(
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)?,
+    neutralButton: (@Composable () -> Unit)?,
     icon: (@Composable () -> Unit)?,
     title: (@Composable () -> Unit)?,
     text: (@Composable () -> Unit)?,
@@ -149,6 +170,9 @@ private fun ZoneAlertContent(
                 ProvideTextStyle(LocalTextStyle.current.merge(MaterialTheme.typography.labelLarge)) {
                     ZoneDialogButtons {
                         dismissButton?.let { slot -> Box(propagateMinConstraints = true) { slot() } }
+                        // AlertController.setupButtons shows positive, neutral and negative as three buttons of the
+                        // same bar, each only when it is given; the neutral one sits between the other two.
+                        neutralButton?.let { slot -> Box(propagateMinConstraints = true) { slot() } }
                         Box(propagateMinConstraints = true) { confirmButton() }
                     }
                 }
@@ -165,7 +189,7 @@ private fun ZoneAlertContent(
  * the whole width, the confirm button (the last child) first, as Material stacks long labels and
  * iOS's alerts do. The fit is the button's own one line width (maxIntrinsicWidth), so it follows
  * the language, the font scale and the width of the window; words are never cut.
- * Children are the dismiss button then the confirm button; a confirm alone takes the whole width.
+ * Children are the dismiss button, the neutral one when there is one, then the confirm button (stacked: confirm, neutral, dismiss); a confirm alone takes the whole width.
  */
 @Composable
 private fun ZoneDialogButtons(content: @Composable () -> Unit) {
@@ -306,8 +330,9 @@ fun Modifier.dialogGlass(shape: Shape, look: com.frontr.app.ui.glass.GlassLook, 
         val outline = shape.createOutline(size, layoutDirection, this)
         val fill = when {
             !blur -> solid
-            look.dark -> Color(0xFF121212).copy(alpha = 0.62f)
-            else -> Color(0xFFFAFAFA).copy(alpha = 0.72f)
+            // The scheme's surfaceContainerHigh, as Material 3's AlertDialog, so the tint follows Material You.
+            look.dark -> solid.copy(alpha = 0.62f)
+            else -> solid.copy(alpha = 0.72f)
         }
         drawOutline(outline, fill)
         drawOutline(outline, com.frontr.app.ui.glass.rimBrush(look, size.height), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4f * density))
@@ -359,7 +384,9 @@ fun DialogNameField(
     state: TextFieldState,
     label: String,
     onDone: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // The field's keyboard (androidx KeyboardOptions: type, capitalization, IME action); a name's by default.
+    keyboardOptions: KeyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done)
 ) {
     val requester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -374,7 +401,7 @@ fun DialogNameField(
         lineLimits = TextFieldLineLimits.SingleLine,
         label = { Text(label) },
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start),
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+        keyboardOptions = keyboardOptions,
         onKeyboardAction = { onDone() },
         inputTransformation = InputTransformation.maxLength(255),
         modifier = modifier.fillMaxWidth().focusRequester(requester)
