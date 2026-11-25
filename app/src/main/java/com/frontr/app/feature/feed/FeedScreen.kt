@@ -87,6 +87,9 @@ fun FeedScreen(
     if (confirmUnfollow) {
         ZoneAlertDialog(
             onDismissRequest = { confirmUnfollow = false },
+            // Drops touches while another app's window covers the dialog (filterTouchesWhenObscured, the kit's ZoneDialog):
+            // https://github.com/super-productivity/super-productivity/blob/master/android/app/src/main/java/com/superproductivity/superproductivity/webview/WebViewBlockActivity.kt#WebViewBlockActivity
+            refuseObscuredTaps = true,
             title = { Text("Unfollow?") },
             confirmButton = {
                 QuietButton(onClick = {

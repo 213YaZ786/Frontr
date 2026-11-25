@@ -103,6 +103,72 @@ class RedditParserTest {
         )
     }
 
+    // Ktor's takeFromUnsafe reads "@" as the end of a user name and "\" as a delimiter, "//" as an authority:
+    // https://github.com/ktorio/ktor/blob/main/ktor-http/common/src/io/ktor/http/URLParser.kt#takeFromUnsafe
+    @Test
+    fun `a next page cursor never names another host`() {
+        fun partial(src: String) = "<faceplate-partial src=\"$src\"></faceplate-partial>"
+        listOf(
+            "@evil.example/svc/shreddit/feeds/x?after=1",
+            ".evil.example/svc/shreddit/feeds/x?after=1",
+            "//evil.example/svc/shreddit/feeds/x?after=1",
+            "/\\evil.example/svc/shreddit/feeds/x?after=1",
+            "/svc/shreddit/feeds/x?after=1\\@evil.example",
+            "svc/shreddit/feeds/x?after=1",
+            "/svc/shreddit/feeds/x?after=1\u0007",
+            "/svc/shreddit/feeds/x?after=1\n"
+        ).forEach { assertNull(it, RedditParser.nextPage(partial(it))) }
+        // A refused partial leaves the next one a chance.
+        assertEquals(
+            "/svc/shreddit/feeds/y?after=2",
+            RedditParser.nextPage(partial("@evil.example/svc/shreddit/feeds/x?after=1") + partial("/svc/shreddit/feeds/y?after=2"))
+        )
+        // The real partials still give their cursor, and the address built from it is Reddit's.
+        assertTrue(RedditHost.owns("https://${RedditParser.HOST}${RedditParser.nextPage(LISTING)}"))
+    }
+
+    // Character references of the HTML standard (named character references, numeric: a code point up to 10FFFF):
+    // https://github.com/w3c/html/blob/master/sections/syntax.include
+    @Test
+    fun `a character reference that is no character stays as it was written`() {
+        assertEquals("&#1114112; &#xFFFFFFFF; &#99999999999; A", RedditParser.decode("&#1114112; &#xFFFFFFFF; &#99999999999; &#65;"))
+        assertEquals(String(Character.toChars(0x1F600)), RedditParser.decode("&#x1F600;"))
+    }
+
+    // Found by the fuzz reading: bannerStyle's lastIndexOf('<') is -1 when no tag precedes the block.
+    @Test
+    fun `a banner block at the very start of a page is read, not thrown at`() {
+        val note = RedditParser.headerNote("id=\"subreddit-banner-img\" style=\"--small-banner:x\">")
+        assertTrue(note, "banner style \"--small-banner:x\"" in note)
+    }
+
+    // Catastrophic backtracking of nested quantifiers on a tag cut off before its ">" (OWASP, ReDoS):
+    // https://owasp.org/www-community/attacks/Regular_expression_Denial_of_Service_-_ReDoS
+    @Test
+    fun `a tag with many quoted attributes and no end is read in no time`() {
+        val flood = "<shreddit-post" + " a=\"b c d\"".repeat(60)
+        val started = System.nanoTime()
+        assertTrue(RedditParser.posts(flood).isEmpty())
+        assertTrue(RedditParser.comments(flood.replace("shreddit-post", "shreddit-comment"), "examples").isEmpty())
+        assertTrue("took ${(System.nanoTime() - started) / 1_000_000} ms", System.nanoTime() - started < 2_000_000_000L)
+    }
+
+    // Quadratic scans: a regex retried from every position of a long run (RedditParserFuzzTest, iteration 1310 took 110 s).
+    // https://owasp.org/www-community/attacks/Regular_expression_Denial_of_Service_-_ReDoS
+    @Test
+    fun `a very long attribute, a flood of open brackets and a flood of open tags are read in no time`() {
+        val started = System.nanoTime()
+        val longValue = "<reddit-page-data data=\"" + "A".repeat(300_000) + "\"></reddit-page-data>"
+        assertNull(RedditParser.subIcon(longValue))
+        val longName = "<shreddit-post id=\"t3_aaa111\" subreddit-name=\"x\" " + "A".repeat(300_000) + "=\"1\"></shreddit-post>"
+        assertTrue(RedditParser.posts(longName).isNotEmpty())
+        val brackets = "<".repeat(300_000)
+        assertTrue(RedditParser.describe(brackets).isNotEmpty())
+        assertTrue(RedditParser.tags("<img ".repeat(100_000), "img").isEmpty())
+        assertTrue(RedditParser.comments("<shreddit-comment ".repeat(100_000), "examples").isEmpty())
+        assertTrue("took ${(System.nanoTime() - started) / 1_000_000} ms", System.nanoTime() - started < 2_000_000_000L)
+    }
+
     @Test
     fun `reads a post page with its text and its whole comment tree`() {
         val conversation = RedditParser.conversation(POST_PAGE)!!
@@ -183,7 +249,8 @@ class RedditParserTest {
         assertEquals("a > b", post.text)
     }
 
-    private companion object {
+    // The golden pages are shared with RedditParserFuzzTest.
+    companion object {
         val LISTING = """
             <shreddit-subreddit-header name="Examples" prefixed-name="r/Examples"></shreddit-subreddit-header>
             <shreddit-post permalink="/r/Examples/comments/aaa111/a_title/" content-href="https://example.org/article"
@@ -258,7 +325,7 @@ class RedditParserTest {
     }
 }
 
-private val SUB_HEADER = """
+internal val SUB_HEADER = """
 <reddit-page-data data="{&quot;subreddit&quot;:{&quot;id&quot;:&quot;t5_1&quot;,&quot;prefixedName&quot;:&quot;r/Examples&quot;,&quot;name&quot;:&quot;Examples&quot;,&quot;communityIcon&quot;:&quot;https://styles.redditmedia.com/t5_1/styles/communityIcon_x.png?width=128&amp;frame=1&quot;}}"></reddit-page-data>
 <shreddit-subreddit-header name="Examples" subreddit-id="t5_1" display-name="Examples" prefixed-name="r/Examples" description="Examples &amp; more, for everyone. " weekly-active-users="4"></shreddit-subreddit-header>
 <div class="masthead"><div class="@container"><div id="subreddit-banner-img" class="community-banner relative bg-center" style="BANNER_STYLE"></div></div></div>

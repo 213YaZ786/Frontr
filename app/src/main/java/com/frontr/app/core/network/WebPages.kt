@@ -6,12 +6,16 @@ import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.frontr.app.core.debug.RequestLog
+import com.frontr.app.data.reddit.RedditHost
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -51,6 +55,10 @@ class WebPages(private val context: Context, private val log: RequestLog) : Page
     private var view: WebView? = null
     private var finished = false
 
+    // The renderer died (onRenderProcessGone): settle() answers at once, and the read waiting on a script is let go.
+    private var engineGone = false
+    private var waiting: CancellableContinuation<String?>? = null
+
     override suspend fun open(url: String): String? = lock.withLock {
         val started = System.currentTimeMillis()
         val html = withContext(Dispatchers.Main) {
@@ -59,8 +67,8 @@ class WebPages(private val context: Context, private val log: RequestLog) : Page
             try {
                 withTimeoutOrNull(TIMEOUT_MS) { settle(web, url) }
             } finally {
-                // Stops the page's scripts until the next one is needed.
-                web.loadUrl("about:blank")
+                // Stops the page's scripts until the next one is needed. A view the renderer's death destroyed is gone.
+                if (view === web) web.loadUrl("about:blank")
                 main.postDelayed(release, IDLE_MS)
             }
         }
@@ -75,27 +83,79 @@ class WebPages(private val context: Context, private val log: RequestLog) : Page
         html
     }
 
-    private suspend fun settle(web: WebView, url: String): String {
+    private suspend fun settle(web: WebView, url: String): String? {
         finished = false
+        engineGone = false
         web.loadUrl(url)
         while (true) {
             delay(POLL_MS)
+            // The renderer died: nothing will finish, no 25 s wait.
+            if (engineGone) return null
             // Ready once the latest page has finished loading and it is not
             // the check page.
-            if (finished && web.evaluate(STATE) == "ready") return web.evaluate(HTML).orEmpty()
+            if (finished && web.evaluate(STATE) == "ready") {
+                val html = web.evaluate(HTML)
+                return if (engineGone) null else html.orEmpty()
+            }
         }
     }
 
+    /**
+     * The view, locked down as MTGA's ChallengeDriver: no file or content access, no geolocation, no windows opened
+     * by a page, mixed content never, third party cookies off, downloads dropped, the main frame kept on Reddit.
+     * Images stay off (Frontr reads the page whole). A dead renderer: the view destroyed, its reference dropped, true
+     * returned (Android's "Handle WebView termination", which ChallengeDriver follows).
+     * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/core/web/ChallengeDriver.kt#ChallengeDriver
+     * not ported: poll (settle() polls the page)
+     * not ported: inspect (ChallengeDetector's check logic, Frontr reads the page whole)
+     * not ported: finish (settle() returns)
+     * not ported: decode (evaluate() decodes)
+     * not ported: onTaskHost (RedditHost.owns)
+     * not ported: release (open() and the idle runnable destroy the view)
+     * not ported: shouldInterceptRequest (X's trackers and media lists; images are off here)
+     * not ported: onPageStarted (this file's own, it sets finished)
+     * not ported: onPageFinished (this file's own, it sets finished)
+     * not ported: onReceivedHttpError (this file's own, it logs)
+     * not ported: onReceivedSslError (the client's default already cancels the load)
+     */
     @SuppressLint("SetJavaScriptEnabled")
     private fun create(): WebView = WebView(context.applicationContext).apply {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        settings.setGeolocationEnabled(false)
+        settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.setSupportMultipleWindows(false)
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.loadsImagesAutomatically = false
         settings.blockNetworkImage = true
         settings.mediaPlaybackRequiresUserGesture = true
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+        setDownloadListener { _, _, _, _, _ -> }
         // Laid out at a phone's size, as if on screen, so the page behaves as it would.
         layout(0, 0, 1080, 2400)
         webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                // Frames must be free to load: a check may live in an iframe on its own domain. Only the top page is
+                // kept on Reddit (https, www.reddit.com, no user name).
+                if (!request.isForMainFrame) return false
+                return !RedditHost.owns(request.url.toString())
+            }
+
+            /** Without this, a crashed renderer takes the whole app down. */
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                log.record(RequestLog.Kind.HTTP, "about:blank", "web engine: stopped", detail = if (detail.didCrash()) "crashed" else "killed")
+                engineGone = true
+                waiting?.let { if (it.isActive) it.resume(null) }
+                waiting = null
+                main.removeCallbacks(release)
+                view.destroy()
+                this@WebPages.view = null
+                return true
+            }
+
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 if (url == "about:blank") return
                 // A new page: wait for this one to finish, the check page's
@@ -125,6 +185,7 @@ class WebPages(private val context: Context, private val log: RequestLog) : Page
     }
 
     private suspend fun WebView.evaluate(script: String): String? = suspendCancellableCoroutine { done ->
+        waiting = done
         evaluateJavascript(script) { raw ->
             // The result comes back as JSON: a quoted string, or null. A page
             // past the network's cap is no page either (HttpClientFactory.MAX_BODY_BYTES).

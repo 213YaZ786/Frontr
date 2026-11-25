@@ -56,13 +56,16 @@ class RedditApi(
      * page [cursor] points at further back.
      */
     suspend fun feed(sub: String, cursor: String? = null, address: String? = null): Outcome<Feed> {
-        val url = cursor?.let { "https://${RedditParser.HOST}$it" } ?: address ?: RedditLink.subUrl(sub)
-        val kind = if (cursor == null) RequestLog.Kind.PROFILE else RequestLog.Kind.PAGE
+        // A cursor that does not name Reddit's own host (one stored by an old
+        // version, say) is dropped: the first page is read instead.
+        val next = cursor?.let { "https://${RedditParser.HOST}$it" }?.takeIf { RedditHost.owns(it) }
+        val url = next ?: address ?: RedditLink.subUrl(sub)
+        val kind = if (next == null) RequestLog.Kind.PROFILE else RequestLog.Kind.PAGE
         return when (val read = get(url, kind, sub)) {
-            is Outcome.Success -> {
+            is Outcome.Success -> readPage(log, kind, url) {
                 var page = read.value
                 var feed = RedditParser.feed(page, sub, System.currentTimeMillis())
-                if (cursor == null && feed.posts.isEmpty() && !RedditParser.isCheckPage(read.value)) {
+                if (next == null && feed.posts.isEmpty() && !RedditParser.isCheckPage(read.value)) {
                     // A page that came straight but bare, the frame of the site
                     // without its posts: the web engine gets the page a browser
                     // would, posts included.
@@ -74,7 +77,7 @@ class RedditApi(
                 }
                 // A first page without a single post is not an empty sub, it is
                 // a page Frontr could not read: an interstitial, a block, a change.
-                if (cursor == null && feed.posts.isEmpty()) {
+                if (next == null && feed.posts.isEmpty()) {
                     // What the page was, so a log sent in shows it: a sub page
                     // that changed shape, a check page, a notice.
                     log.record(kind, url, "no posts read", httpStatus = 200, bodyBytes = page.length, detail = RedditParser.describe(page))
@@ -84,7 +87,7 @@ class RedditApi(
                     // Whether the sub's icon and banner were found, and what
                     // the banner block held, so a log sent in tells a sub
                     // without a banner from a page Frontr misread.
-                    if (cursor == null) log.record(kind, url, "sub header", detail = RedditParser.headerNote(page))
+                    if (next == null) log.record(kind, url, "sub header", detail = RedditParser.headerNote(page))
                     Outcome.Success(feed)
                 }
             }
@@ -93,7 +96,7 @@ class RedditApi(
                 // a rate limit have nothing to learn from other addresses.
                 val refused = read.error is AppError.ClientRefused || read.error is AppError.ServerError ||
                     read.error is AppError.AccountNotFound || read.error is AppError.AccountUnavailable
-                if (cursor == null && refused) check(sub, url, null)
+                if (next == null && refused) check(sub, url, null)
                 read
             }
         }
@@ -147,7 +150,7 @@ class RedditApi(
     suspend fun post(thingId: String): Outcome<Conversation> {
         val url = RedditLink.postUrl(thingId)
         return when (val read = get(url, RequestLog.Kind.THREAD)) {
-            is Outcome.Success -> {
+            is Outcome.Success -> readPage(log, RequestLog.Kind.THREAD, url) {
                 var page = read.value
                 var conversation = RedditParser.conversation(page)
                 // A text post whose page came without its body: the frame of
@@ -286,5 +289,35 @@ class RedditApi(
 
     private companion object {
         const val CHECK_GAP_MS = 1_500L
+    }
+}
+
+/**
+ * The catch of MTGA's fetchTimeline: a Throwable out of the read is logged and
+ * becomes a failure, a cancellation (leaving the screen) is rethrown, never
+ * logged or counted as a failure. Here it guards the parsing of a page that
+ * came (feed and post), which Reddit or a hostile answer may shape to throw: the
+ * answer is the one already used for a page without posts.
+ * https://github.com/213YaZ786/MTGA/blob/main/app/src/main/java/com/mtga/app/data/html/HtmlSource.kt#fetchTimeline
+ * not ported: fetchTimeline's throttle gate and cooling down skip, gateway.getPage, error429 and
+ * throttle.penalise or clear, the Nitter instance's host, the Success log line with the feed's counts
+ * (RedditApi.get() and feed() do these), ErrorMapper.fromThrowable (a page that arrived is not a transport failure).
+ */
+internal inline fun <T> readPage(log: RequestLog, kind: RequestLog.Kind, url: String, read: () -> Outcome<T>): Outcome<T> {
+    val startedAt = System.nanoTime()
+    return try {
+        read()
+    } catch (t: Throwable) {
+        // Leaving the screen cancels the read. That is not a failure of the host.
+        if (t is CancellationException) throw t
+        log.record(
+            kind = kind,
+            url = url,
+            outcome = "page could not be read",
+            httpStatus = 200,
+            durationMillis = (System.nanoTime() - startedAt) / 1_000_000,
+            detail = t::class.java.name
+        )
+        Outcome.Failure(AppError.ClientRefused(RedditParser.HOST, 200))
     }
 }

@@ -123,6 +123,8 @@ fun FoldersScreen(
         val count = rows.count { it.folder == name }
         ZoneAlertDialog(
             onDismissRequest = { deleting = null },
+            // Drops touches while another app's window covers the dialog, as ZoneDialog's WebViewBlockActivity port.
+            refuseObscuredTaps = true,
             title = { Text("Delete $name?") },
             text = {
                 Text(

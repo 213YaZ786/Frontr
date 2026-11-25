@@ -101,7 +101,7 @@ internal object RedditParser {
 
     private fun bannerStyle(html: String): String? {
         val at = html.indexOf("id=\"subreddit-banner-img\"").takeIf { it >= 0 } ?: return null
-        val open = html.lastIndexOf('<', at)
+        val open = html.lastIndexOf('<', at).coerceAtLeast(0)
         val close = html.indexOf('>', at).takeIf { it > 0 } ?: return null
         return attributes(html.substring(open, close))["style"]
     }
@@ -114,11 +114,12 @@ internal object RedditParser {
     /**
      * Where the next page of posts is loaded from: the partial a browser
      * fetches when the reader nears the end. Null at the end of the sub.
+     * Only a path of Reddit's own host (RedditHost.isPath).
      */
     fun nextPage(html: String): String? =
         tags(html, "faceplate-partial")
             .mapNotNull { it["src"] }
-            .firstOrNull { ("more-posts" in it || "/feeds/" in it) && "after=" in it && "right-rail" !in it }
+            .firstOrNull { ("more-posts" in it || "/feeds/" in it) && "after=" in it && "right-rail" !in it && RedditHost.isPath(it) }
 
     /**
      * A short account of a page that gave no posts, for the activity log:
@@ -127,13 +128,13 @@ internal object RedditParser {
      * what it is. Nothing of the reader is in it.
      */
     fun describe(html: String): String {
-        val title = Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(html)
+        val title = Regex("<title[^<>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(html)
             ?.groupValues?.get(1)?.let(::decode)?.trim().orEmpty()
         val posts = Regex("<shreddit-post[\\s>]").findAll(html).count()
         val reddit = Regex("<(shreddit|faceplate)-").findAll(html).count()
         val text = decode(
             html.replace(Regex("(?is)<(script|style|template)\\b.*?</\\1>"), " ")
-                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("<[^<>]+>"), " ")
         ).replace(Regex("\\s+"), " ").trim()
         return "title \"${title.take(TITLE_LIMIT)}\", $posts post elements, $reddit Reddit elements, " +
             "text \"${text.take(TEXT_LIMIT)}\""
@@ -290,7 +291,7 @@ internal object RedditParser {
     private fun thumbnail(html: String, id: String): String? {
         val at = html.indexOf("id=\"$id\"").takeIf { it >= 0 } ?: return null
         val end = html.indexOf("</shreddit-post>", at).takeIf { it > 0 } ?: html.length
-        return Regex("""<img\b[^>]*\bsrc="(https://(?:external-preview\.redd\.it|preview\.redd\.it|b\.thumbs\.redditmedia\.com)/[^"]+)"""")
+        return Regex("""<img\b[^<>]*\bsrc="(https://(?:external-preview\.redd\.it|preview\.redd\.it|b\.thumbs\.redditmedia\.com)/[^"]+)"""")
             .find(html.substring(at, end))?.groupValues?.get(1)?.let(::decode)
     }
 
@@ -327,15 +328,15 @@ internal object RedditParser {
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
             .replace(Regex("(?i)</(p|li|blockquote|h[1-6]|pre)>"), "\n\n")
             // A list item starts with a hyphen, as Reddit's own markdown writes a list (https://www.reddit.com/wiki/markdown), no bullet.
-            .replace(Regex("(?i)<li[^>]*>"), "- ")
-            .replace(Regex("<[^>]+>"), "")
+            .replace(Regex("(?i)<li[^<>]*>"), "- ")
+            .replace(Regex("<[^<>]+>"), "")
         return decode(text).lines().joinToString("\n") { it.trim() }
             .replace(Regex("\n{3,}"), "\n\n").trim()
     }
 
     private fun richLinks(html: String, blockId: String): List<String> {
         val inner = divInner(html, blockId) ?: return emptyList()
-        return Regex("""<a\b[^>]*href="(https?://[^"]+)"""").findAll(inner).map { decode(it.groupValues[1]) }.distinct().toList()
+        return Regex("""<a\b[^<>]*href="(https?://[^"]+)"""").findAll(inner).map { decode(it.groupValues[1]) }.distinct().toList()
     }
 
     /** What sits inside the div with this id, nested divs balanced. */
@@ -344,12 +345,16 @@ internal object RedditParser {
         val start = html.indexOf('>', open) + 1
         var depth = 1
         var i = start
-        val tag = Regex("<(/?)div\\b", RegexOption.IGNORE_CASE)
+        // One Matcher for the whole walk, its find(start) resetting it each time (java.util.regex.Matcher#find):
+        // Kotlin's Regex.find made a Matcher, a MatchResult and a groupValues list per div, about 400 bytes each, so
+        // a block of thousands of nested divs read by every comment allocated hundreds of times the page (RedditParserFuzzTest).
+        // https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/regex/Matcher.java#find
+        val tag = Regex("<(/?)div\\b", RegexOption.IGNORE_CASE).toPattern().matcher(html)
         while (depth > 0) {
-            val m = tag.find(html, i) ?: return null
-            depth += if (m.groupValues[1] == "/") -1 else 1
-            i = m.range.last + 1
-            if (depth == 0) return html.substring(start, m.range.first)
+            if (!tag.find(i)) return null
+            depth += if (tag.end(1) > tag.start(1)) -1 else 1
+            i = tag.end()
+            if (depth == 0) return html.substring(start, tag.start())
         }
         return null
     }
@@ -357,9 +362,12 @@ internal object RedditParser {
     /**
      * Every opening tag with this name, as its decoded attributes. Quoted
      * values may hold a raw >, as a page read back from the web engine can.
+     * The value group is atomic (?>): a tag cut off before its > would else be
+     * tried every way, each quoted value with spaces read as one attribute or
+     * as several, twice per attribute (RedditParserFuzzTest, "attribute flood").
      */
     fun tags(html: String, name: String): List<Map<String, String>> =
-        Regex("<$name((?:\\s+[^\\s=>/]+(?:=(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?)*)\\s*/?>", RegexOption.IGNORE_CASE)
+        Regex("<$name((?:\\s+[^\\s=>/<]+(?:=(?>\"[^\"]*\"|'[^']*'|[^\\s<>]+))?)*)\\s*/?>", RegexOption.IGNORE_CASE)
             .findAll(html).map { attributes(it.groupValues[1]) }.toList()
 
     private fun attributes(raw: String): Map<String, String> =
@@ -373,8 +381,8 @@ internal object RedditParser {
     fun decode(text: String): String = ENTITY.replace(text) { m ->
         val e = m.groupValues[1]
         when {
-            e.startsWith("#x") || e.startsWith("#X") -> e.substring(2).toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: m.value
-            e.startsWith("#") -> e.substring(1).toIntOrNull()?.let { String(Character.toChars(it)) } ?: m.value
+            e.startsWith("#x") || e.startsWith("#X") -> e.substring(2).toIntOrNull(16)?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: m.value
+            e.startsWith("#") -> e.substring(1).toIntOrNull()?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: m.value
             else -> NAMED[e] ?: m.value
         }
     }
@@ -395,10 +403,12 @@ internal object RedditParser {
     private val BANNER_URL = Regex("""(?:(--[a-z-]+)\s*:\s*)?url\(([^)]+)\)""")
     private val BANNER_SIZES = listOf("--large-banner", "--x-large-banner", "--medium-banner", "--small-banner")
     private val TREE_TAG = Regex(
-        "<(shreddit-comment|faceplate-partial)((?:\\s+[^\\s=>/]+(?:=(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?)*)\\s*/?>",
+        "<(shreddit-comment|faceplate-partial)((?:\\s+[^\\s=>/<]+(?:=(?>\"[^\"]*\"|'[^']*'|[^\\s<>]+))?)*)\\s*/?>",
         RegexOption.IGNORE_CASE
     )
-    private val ATTRIBUTE = Regex("""([a-zA-Z][a-zA-Z0-9:-]*)="([^"]*)"""")
+    // A name starts where no name character precedes it: else every position of a long run of letters (a 100 KB
+    // attribute value) is tried as a start and reads the whole run to the end, quadratic (RedditParserFuzzTest).
+    private val ATTRIBUTE = Regex("""(?<![a-zA-Z0-9:-])([a-zA-Z][a-zA-Z0-9:-]*)="([^"]*)"""")
     private val ENTITY = Regex("&(#?[a-zA-Z0-9]+);")
     private val NAMED = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ")
     private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".gif", ".webp")

@@ -685,6 +685,8 @@ fun SettingsScreen(
         )
         OpenDialog.CLEAR -> ZoneAlertDialog(
             onDismissRequest = { dialog = OpenDialog.NONE },
+            // Drops touches while another app's window covers the dialog, as ZoneDialog's WebViewBlockActivity port.
+            refuseObscuredTaps = true,
             title = { Text("Clear saved posts?") },
             text = {
                 Text("Posts saved on this phone will be deleted. They load again the next time you open a subreddit.")
